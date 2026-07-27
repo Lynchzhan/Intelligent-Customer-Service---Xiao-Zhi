@@ -1,0 +1,2 @@
+# Direct runtime dependency. Transitive dependencies are resolved by pip.
+langgraph==1.2.9
