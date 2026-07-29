@@ -1,2 +1,4 @@
 # Direct runtime dependency. Transitive dependencies are resolved by pip.
 langgraph==1.2.9
+openai==2.48.0
+python-dotenv==1.2.2
