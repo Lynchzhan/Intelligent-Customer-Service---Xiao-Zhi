@@ -76,6 +76,7 @@ class LangGraphLlmAgentTests(unittest.TestCase):
         self.assertEqual(result["route"], "technical_reply")
         self.assertEqual(
             result["response"],
+            "系统当前繁忙，已使用备用方式继续处理您的问题。\n"
             "抱歉给您带来不便。请尝试重新登录或重启应用。",
         )
 

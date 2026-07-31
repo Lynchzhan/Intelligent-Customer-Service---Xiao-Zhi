@@ -19,6 +19,7 @@
 - 本地 FAQ 知识库：退款时效、客服工作时间和密码重置。
 - OpenAI 兼容模型分类器，支持 JSON 输出、分类范围校验及重复 JSON 恢复。
 - 模型请求超时、连接失败、服务端错误或非法输出时，自动降级到规则分类，并记录分类来源和错误类型。
+- 发生分类降级时，向用户展示友好提示，同时不暴露底层异常名称。
 - 本地 `unittest` 测试，不在单元测试中发起真实模型请求。
 
 ## Architecture
@@ -128,6 +129,7 @@ For this query, the expected route is `billing_reply`, and the local FAQ answer 
 - LLM coordination tests mock `request_model_classification`, so no API request is made.
 - LLM LangGraph tests mock `classify_with_model`, while real sentiment, routing, FAQ, and response nodes still execute.
 - LLM LangGraph tests also cover an API timeout and verify that rule-based classification takes over.
+- The fallback path also verifies that the final user-facing message remains readable.
 - Live probes and live end-to-end commands are intentionally separate from `unittest`, because they depend on network availability, API credentials, quota, and model-service behavior.
 
 ## Known Limitations
