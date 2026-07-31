@@ -5,14 +5,15 @@ from src.knowledge_base import find_faq_answer
 class CustomerState(TypedDict, total=False):
     query: str
     category: Literal["technical", "billing", "general"]
+    classification_source: Literal["llm", "rule_fallback"]
+    classification_error: str
     sentiment: Literal["positive", "negative", "neutral"]
-    route:Literal[
+    route: Literal[
         "technical_reply",
         "billing_reply",
         "general_reply",
         "human_handoff",
     ]
-    # FAQ 检索节点命中知识库后写入的答案。
     faq_answer: str
     response: str
 

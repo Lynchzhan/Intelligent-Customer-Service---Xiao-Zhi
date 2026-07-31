@@ -18,6 +18,7 @@
 - LangGraph 状态图和条件边：人工转接跳过 FAQ，自动路线进入 FAQ 检索。
 - 本地 FAQ 知识库：退款时效、客服工作时间和密码重置。
 - OpenAI 兼容模型分类器，支持 JSON 输出、分类范围校验及重复 JSON 恢复。
+- 模型请求超时、连接失败、服务端错误或非法输出时，自动降级到规则分类，并记录分类来源和错误类型。
 - 本地 `unittest` 测试，不在单元测试中发起真实模型请求。
 
 ## Architecture
@@ -40,6 +41,14 @@ flowchart TD
 -> OpenAI 兼容模型分类
 -> JSON 解析与校验
 -> 本地情绪判断、路由、FAQ 和回复
+
+如果模型分类失败，分类节点会改用规则分类器，并继续执行后续本地节点：
+
+```text
+模型分类失败
+-> 规则分类降级
+-> 本地情绪判断、路由、FAQ 和回复
+```
 ```
 
 ## Project Structure
@@ -78,7 +87,7 @@ Run all local tests:
 python -m unittest discover -s .\tests -v
 ```
 
-The current local suite contains 16 tests. It does not call a real model API.
+The current local suite contains 17 tests. It does not call a real model API.
 
 Run the rule-based interactive CLI:
 
@@ -118,6 +127,7 @@ For this query, the expected route is `billing_reply`, and the local FAQ answer 
 - LLM parser tests cover valid JSON, repeated identical JSON, invalid JSON, unsupported categories, and contradictory JSON objects.
 - LLM coordination tests mock `request_model_classification`, so no API request is made.
 - LLM LangGraph tests mock `classify_with_model`, while real sentiment, routing, FAQ, and response nodes still execute.
+- LLM LangGraph tests also cover an API timeout and verify that rule-based classification takes over.
 - Live probes and live end-to-end commands are intentionally separate from `unittest`, because they depend on network availability, API credentials, quota, and model-service behavior.
 
 ## Known Limitations
