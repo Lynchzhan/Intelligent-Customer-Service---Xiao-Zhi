@@ -11,6 +11,7 @@ from src.agent import (
 )
 from src.langgraph_agent import should_retrieve_faq
 from src.llm_classifier import classify_with_model
+from src.llm_responder import generate_reply_with_model
 
 
 def categorize_with_model(state: CustomerState) -> CustomerState:
@@ -43,6 +44,49 @@ def categorize_with_model(state: CustomerState) -> CustomerState:
     }
 
 
+def generate_controlled_response(state: CustomerState) -> CustomerState:
+    # 先判断当前状态是否满足调用回复模型的全部条件。
+    can_use_model = (
+        state["route"] != "human_handoff"
+        and state.get("classification_source") == "llm"
+        and state.get("faq_answer") is not None
+    )
+
+    # 人工转接、分类已降级或 FAQ 未命中时，直接使用本地回复。
+    if not can_use_model:
+        local_update = generate_response(state)
+        return {
+            "response": local_update["response"],
+            "response_source": "local",
+        }
+
+    try:
+        # 只有满足条件时，才让模型根据 FAQ 答案组织自然回复。
+        model_update = generate_reply_with_model(
+            state["query"],
+            state["faq_answer"],
+        )
+    except (
+        APITimeoutError,
+        APIConnectionError,
+        APIStatusError,
+        ValueError,
+    ) as error:
+        # 回复模型失败时，保留 FAQ 原文作为可靠答案。
+        fallback_update = generate_response(state)
+        return {
+            "response": fallback_update["response"],
+            "response_source": "faq_fallback",
+            "response_error": type(error).__name__,
+        }
+
+    # 模型回复成功时，记录最终回复来自受控模型。
+    return {
+        "response": model_update["response"],
+        "response_source": "llm",
+    }
+
+
 # 使用统一的客服状态结构创建大模型版工作流。
 workflow = StateGraph(CustomerState)
 
@@ -51,7 +95,7 @@ workflow.add_node("categorize", categorize_with_model)
 workflow.add_node("analyze_sentiment", analyze_sentiment)
 workflow.add_node("choose_route", choose_route)
 workflow.add_node("retrieve_faq_answer", retrieve_faq_answer)
-workflow.add_node("generate_response", generate_response)
+workflow.add_node("generate_response", generate_controlled_response)
 
 # 定义工作流的固定执行顺序。
 workflow.add_edge(START, "categorize")

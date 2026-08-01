@@ -5,7 +5,7 @@
 项目同时保留两条实现路线：
 
 - 规则版：使用关键词完成分类和情绪判断，适合稳定、免费地运行本地测试。
-- 大模型版：仅使用 OpenAI 兼容模型完成问题分类；情绪、路由、FAQ 和回复节点继续复用本地规则。
+- 大模型版：使用 OpenAI 兼容模型完成分类，并在 FAQ 命中后受控改写回复；情绪、路由和 FAQ 检索继续复用本地规则。
 
 这是一项学习和作品集项目，不是可直接投入生产的客服系统。
 
@@ -20,7 +20,8 @@
 - OpenAI 兼容模型分类器，支持 JSON 输出、分类范围校验及重复 JSON 恢复。
 - 模型请求超时、连接失败、服务端错误或非法输出时，自动降级到规则分类，并记录分类来源和错误类型。
 - 发生分类降级时，向用户展示友好提示，同时不暴露底层异常名称。
-- 已建立独立的受控回复模块：它只接收用户问题和 FAQ 答案，目前尚未接入 LangGraph 主流程。
+- 受控回复模块只根据已命中的 FAQ 答案组织语言；人工转接、无 FAQ 或分类降级时不会调用回复模型。
+- 回复模型失败时自动回退到 FAQ 原文，并记录回复来源和错误类型。
 - 本地 `unittest` 测试，不在单元测试中发起真实模型请求。
 
 ## Architecture
@@ -42,7 +43,8 @@ flowchart TD
 用户问题
 -> OpenAI 兼容模型分类
 -> JSON 解析与校验
--> 本地情绪判断、路由、FAQ 和回复
+-> 本地情绪判断、路由和 FAQ 检索
+-> 受控模型回复或本地安全回复
 ```
 
 如果模型分类失败，分类节点会改用规则分类器，并继续执行后续本地节点：
@@ -91,7 +93,7 @@ Run all local tests:
 python -m unittest discover -s .\tests -v
 ```
 
-The current local suite contains 23 tests. It does not call a real model API.
+The current local suite contains 26 tests. It does not call a real model API.
 
 Run the rule-based interactive CLI:
 
@@ -134,11 +136,13 @@ For this query, the expected route is `billing_reply`, and the local FAQ answer 
 - LLM LangGraph tests also cover an API timeout and verify that rule-based classification takes over.
 - The fallback path also verifies that the final user-facing message remains readable.
 - Controlled responder tests validate FAQ input protection, JSON parsing, repeated outputs, and contradictory outputs.
+- LangGraph responder tests verify model rewriting, human-handoff skipping, missing-FAQ skipping, classification-fallback skipping, and FAQ fallback after reply timeout.
 - Live probes and live end-to-end commands are intentionally separate from `unittest`, because they depend on network availability, API credentials, quota, and model-service behavior.
 
 ## Known Limitations
 
-- The LangGraph workflow currently uses the LLM only for classification; sentiment analysis and FAQ retrieval remain keyword based, and the new controlled responder is not integrated yet.
+- Sentiment analysis and FAQ retrieval remain keyword based.
+- Prompt restrictions and JSON validation reduce model risk but cannot prove semantic faithfulness; the original FAQ answer remains the trusted fallback.
 - The local FAQ knowledge base is a small in-memory list with no source citations or versioning.
 - Third-party model services can time out, be rate-limited, or return imperfect compatibility behavior. The classifier validates and safely handles repeated identical JSON, but conflicting results are rejected.
 - There is no persistent conversation history, ticket system, database, authentication, rate limiting, observability, or human-agent backend.

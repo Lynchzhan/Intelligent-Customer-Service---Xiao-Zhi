@@ -11,6 +11,8 @@ class CustomerState(TypedDict, total=False):
     category: Literal["technical", "billing", "general"]
     classification_source: Literal["llm", "rule_fallback"]
     classification_error: str
+    response_source: Literal["llm", "faq_fallback", "local"]
+    response_error: str
     sentiment: Literal["positive", "negative", "neutral"]
     route: Literal[
         "technical_reply",
