@@ -20,6 +20,7 @@
 - OpenAI 兼容模型分类器，支持 JSON 输出、分类范围校验及重复 JSON 恢复。
 - 模型请求超时、连接失败、服务端错误或非法输出时，自动降级到规则分类，并记录分类来源和错误类型。
 - 发生分类降级时，向用户展示友好提示，同时不暴露底层异常名称。
+- 已建立独立的受控回复模块：它只接收用户问题和 FAQ 答案，目前尚未接入 LangGraph 主流程。
 - 本地 `unittest` 测试，不在单元测试中发起真实模型请求。
 
 ## Architecture
@@ -42,6 +43,7 @@ flowchart TD
 -> OpenAI 兼容模型分类
 -> JSON 解析与校验
 -> 本地情绪判断、路由、FAQ 和回复
+```
 
 如果模型分类失败，分类节点会改用规则分类器，并继续执行后续本地节点：
 
@@ -49,7 +51,6 @@ flowchart TD
 模型分类失败
 -> 规则分类降级
 -> 本地情绪判断、路由、FAQ 和回复
-```
 ```
 
 ## Project Structure
@@ -64,12 +65,14 @@ src/
   model_client.py         OpenAI-compatible client construction
   model_probe.py          Minimal live model connection probe
   llm_classifier.py       LLM request, JSON parsing, and classification validation
+  llm_responder.py        Controlled LLM reply request and response validation
   cli.py                  Rule-based interactive CLI
 tests/
   test_agent.py                 Rule-based workflow tests
   test_knowledge_base.py        FAQ lookup tests
   test_llm_classifier.py        Local LLM classifier tests with mocked API requests
   test_langgraph_llm_agent.py   LLM LangGraph tests with mocked classification
+  test_llm_responder.py         Controlled LLM reply tests with mocked API requests
 ```
 
 ## Quick Start
@@ -88,7 +91,7 @@ Run all local tests:
 python -m unittest discover -s .\tests -v
 ```
 
-The current local suite contains 17 tests. It does not call a real model API.
+The current local suite contains 23 tests. It does not call a real model API.
 
 Run the rule-based interactive CLI:
 
@@ -130,11 +133,12 @@ For this query, the expected route is `billing_reply`, and the local FAQ answer 
 - LLM LangGraph tests mock `classify_with_model`, while real sentiment, routing, FAQ, and response nodes still execute.
 - LLM LangGraph tests also cover an API timeout and verify that rule-based classification takes over.
 - The fallback path also verifies that the final user-facing message remains readable.
+- Controlled responder tests validate FAQ input protection, JSON parsing, repeated outputs, and contradictory outputs.
 - Live probes and live end-to-end commands are intentionally separate from `unittest`, because they depend on network availability, API credentials, quota, and model-service behavior.
 
 ## Known Limitations
 
-- The LLM is used only for classification; sentiment analysis and FAQ retrieval remain keyword based.
+- The LangGraph workflow currently uses the LLM only for classification; sentiment analysis and FAQ retrieval remain keyword based, and the new controlled responder is not integrated yet.
 - The local FAQ knowledge base is a small in-memory list with no source citations or versioning.
 - Third-party model services can time out, be rate-limited, or return imperfect compatibility behavior. The classifier validates and safely handles repeated identical JSON, but conflicting results are rejected.
 - There is no persistent conversation history, ticket system, database, authentication, rate limiting, observability, or human-agent backend.
