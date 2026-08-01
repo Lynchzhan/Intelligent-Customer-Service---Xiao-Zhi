@@ -68,6 +68,8 @@ src/
   model_probe.py          Minimal live model connection probe
   llm_classifier.py       LLM request, JSON parsing, and classification validation
   llm_responder.py        Controlled LLM reply request and response validation
+  observability.py        Format classification and response sources for debugging
+  llm_cli.py              Interactive CLI for the LLM workflow
   cli.py                  Rule-based interactive CLI
 tests/
   test_agent.py                 Rule-based workflow tests
@@ -75,6 +77,7 @@ tests/
   test_llm_classifier.py        Local LLM classifier tests with mocked API requests
   test_langgraph_llm_agent.py   LLM LangGraph tests with mocked classification
   test_llm_responder.py         Controlled LLM reply tests with mocked API requests
+  test_observability.py         Observability formatting tests
 ```
 
 ## Quick Start
@@ -93,12 +96,18 @@ Run all local tests:
 python -m unittest discover -s .\tests -v
 ```
 
-The current local suite contains 26 tests. It does not call a real model API.
+The current local suite contains 29 tests. It does not call a real model API.
 
 Run the rule-based interactive CLI:
 
 ```powershell
 python -m src.cli
+```
+
+Run the LLM workflow interactive CLI (requires `.env` and may incur API cost):
+
+```powershell
+python -m src.llm_cli
 ```
 
 ## Model Configuration
@@ -137,6 +146,7 @@ For this query, the expected route is `billing_reply`, and the local FAQ answer 
 - The fallback path also verifies that the final user-facing message remains readable.
 - Controlled responder tests validate FAQ input protection, JSON parsing, repeated outputs, and contradictory outputs.
 - LangGraph responder tests verify model rewriting, human-handoff skipping, missing-FAQ skipping, classification-fallback skipping, and FAQ fallback after reply timeout.
+- Observability tests verify source and error information formatting without making API requests.
 - Live probes and live end-to-end commands are intentionally separate from `unittest`, because they depend on network availability, API credentials, quota, and model-service behavior.
 
 ## Known Limitations
