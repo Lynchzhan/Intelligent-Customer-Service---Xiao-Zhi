@@ -8,21 +8,21 @@ class ObservabilityTests(unittest.TestCase):
         # 模拟分类和回复都由大模型成功完成的状态。
         state = {
             "query": "退款一般多久到账？",
-            "classification_source": "llm",
+            "analysis_source": "llm",
             "response_source": "llm",
         }
 
         self.assertEqual(
             format_observability(state),
-            ["分类来源：llm", "回复来源：llm"],
+            ["分析来源：llm", "回复来源：llm"],
         )
 
     def test_error_sources_are_displayed(self) -> None:
         # 模拟分类和回复都发生降级的状态。
         state = {
             "query": "退款一般多久到账？",
-            "classification_source": "rule_fallback",
-            "classification_error": "APITimeoutError",
+            "analysis_source": "rule_fallback",
+            "analysis_error": "APITimeoutError",
             "response_source": "faq_fallback",
             "response_error": "APIConnectionError",
         }
@@ -30,9 +30,9 @@ class ObservabilityTests(unittest.TestCase):
         self.assertEqual(
             format_observability(state),
             [
-                "分类来源：rule_fallback",
+                "分析来源：rule_fallback",
                 "回复来源：faq_fallback",
-                "分类错误：APITimeoutError",
+                "分析错误：APITimeoutError",
                 "回复错误：APIConnectionError",
             ],
         )
@@ -43,5 +43,5 @@ class ObservabilityTests(unittest.TestCase):
 
         self.assertEqual(
             format_observability(state),
-            ["分类来源：local", "回复来源：local"],
+            ["分析来源：local", "回复来源：local"],
         )

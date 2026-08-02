@@ -10,17 +10,17 @@ from src.agent import (
     retrieve_faq_answer,
 )
 from src.langgraph_agent import should_retrieve_faq
-from src.llm_classifier import classify_with_model
+from src.llm_classifier import analyze_with_model
 from src.llm_responder import generate_reply_with_model
 
 
-def categorize_with_model(state: CustomerState) -> CustomerState:
+def analyze_query_with_model(state: CustomerState) -> CustomerState:
     # 从工作流状态中读取用户原始问题。
     query = state["query"]
 
     try:
-        # 优先使用大模型完成分类。
-        model_update = classify_with_model(query)
+        # 优先使用一次大模型请求完成分类和情绪分析。
+        model_update = analyze_with_model(query)
     except (
         APITimeoutError,
         APIConnectionError,
@@ -28,19 +28,22 @@ def categorize_with_model(state: CustomerState) -> CustomerState:
         ValueError,
     ) as error:
         # 模型超时、网络失败、服务端报错或分类结果不合法时，
-        # 使用已有规则分类函数继续处理用户问题。
-        fallback_update = categorize_query(state)
+        # 同时使用本地分类和情绪节点补齐完整分析结果。
+        category_update = categorize_query(state)
+        sentiment_update = analyze_sentiment(state)
 
         return {
-            "category": fallback_update["category"],
-            "classification_source": "rule_fallback",
-            "classification_error": type(error).__name__,
+            "category": category_update["category"],
+            "sentiment": sentiment_update["sentiment"],
+            "analysis_source": "rule_fallback",
+            "analysis_error": type(error).__name__,
         }
 
-    # 模型分类成功时，记录结果来自大模型。
+    # 两个字段都验证成功时，记录本次综合分析来自大模型。
     return {
         "category": model_update["category"],
-        "classification_source": "llm",
+        "sentiment": model_update["sentiment"],
+        "analysis_source": "llm",
     }
 
 
@@ -48,7 +51,7 @@ def generate_controlled_response(state: CustomerState) -> CustomerState:
     # 先判断当前状态是否满足调用回复模型的全部条件。
     can_use_model = (
         state["route"] != "human_handoff"
-        and state.get("classification_source") == "llm"
+        and state.get("analysis_source") == "llm"
         and state.get("faq_answer") is not None
     )
 
@@ -91,16 +94,14 @@ def generate_controlled_response(state: CustomerState) -> CustomerState:
 workflow = StateGraph(CustomerState)
 
 # 注册各个工作流节点。
-workflow.add_node("categorize", categorize_with_model)
-workflow.add_node("analyze_sentiment", analyze_sentiment)
+workflow.add_node("analyze_query", analyze_query_with_model)
 workflow.add_node("choose_route", choose_route)
 workflow.add_node("retrieve_faq_answer", retrieve_faq_answer)
 workflow.add_node("generate_response", generate_controlled_response)
 
 # 定义工作流的固定执行顺序。
-workflow.add_edge(START, "categorize")
-workflow.add_edge("categorize", "analyze_sentiment")
-workflow.add_edge("analyze_sentiment", "choose_route")
+workflow.add_edge(START, "analyze_query")
+workflow.add_edge("analyze_query", "choose_route")
 
 # 根据路由结果，选择是否需要执行 FAQ 检索。
 workflow.add_conditional_edges(

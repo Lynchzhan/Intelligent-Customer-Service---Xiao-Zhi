@@ -9,8 +9,8 @@ FALLBACK_USER_NOTICE = "系统当前繁忙，已使用备用方式继续处理�
 class CustomerState(TypedDict, total=False):
     query: str
     category: Literal["technical", "billing", "general"]
-    classification_source: Literal["llm", "rule_fallback"]
-    classification_error: str
+    analysis_source: Literal["llm", "rule_fallback"]
+    analysis_error: str
     response_source: Literal["llm", "faq_fallback", "local"]
     response_error: str
     sentiment: Literal["positive", "negative", "neutral"]
@@ -124,7 +124,7 @@ def generate_response(state: CustomerState) -> CustomerState:
             base_response = fallback_responses[route]
 
     # 只在发生模型降级时增加用户可理解的提示。
-    if state.get("classification_source") == "rule_fallback":
+    if state.get("analysis_source") == "rule_fallback":
         return {"response": f"{FALLBACK_USER_NOTICE}\n{base_response}"}
 
     return {"response": base_response}

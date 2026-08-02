@@ -9,24 +9,27 @@ from src.langgraph_llm_agent import run_langgraph_llm_customer_service_agent
 
 class LangGraphLlmAgentTests(unittest.TestCase):
     @patch("src.langgraph_llm_agent.generate_reply_with_model")
-    @patch("src.langgraph_llm_agent.classify_with_model")
+    @patch("src.langgraph_llm_agent.analyze_with_model")
     def test_negative_technical_query_is_handed_to_human(
         self,
-        mock_classify_with_model,
+        mock_analyze_with_model,
         mock_generate_reply,
     ) -> None:
         # 准备一条技术问题且带有负面情绪的用户输入。
         query = "软件打开后一直崩溃，太差了！"
 
-        # 模拟大模型分类成功。
-        mock_classify_with_model.return_value = {"category": "technical"}
+        # 模拟一次模型分析同时返回分类和负面情绪。
+        mock_analyze_with_model.return_value = {
+            "category": "technical",
+            "sentiment": "negative",
+        }
 
         # 运行完整的大模型版 LangGraph 工作流。
         result = run_langgraph_llm_customer_service_agent(query)
 
         # 验证分类结果来自大模型。
         self.assertEqual(result["category"], "technical")
-        self.assertEqual(result["classification_source"], "llm")
+        self.assertEqual(result["analysis_source"], "llm")
 
         # 验证真实情绪判断和路由节点仍然正常执行。
         self.assertEqual(result["sentiment"], "negative")
@@ -40,23 +43,23 @@ class LangGraphLlmAgentTests(unittest.TestCase):
         self.assertEqual(result["response_source"], "local")
 
         # 验证原始用户问题只传给大模型分类函数一次。
-        mock_classify_with_model.assert_called_once_with(query)
+        mock_analyze_with_model.assert_called_once_with(query)
 
         # 人工转接路线不能调用回复模型。
         mock_generate_reply.assert_not_called()
 
     @patch("src.langgraph_llm_agent.generate_reply_with_model")
-    @patch("src.langgraph_llm_agent.classify_with_model")
+    @patch("src.langgraph_llm_agent.analyze_with_model")
     def test_timeout_falls_back_to_rule_based_classification(
         self,
-        mock_classify_with_model,
+        mock_analyze_with_model,
         mock_generate_reply,
     ) -> None:
         # 准备一条规则分类器能够识别的技术问题。
         query = "软件打开后一直崩溃"
 
         # 模拟模型 API 请求超时。
-        mock_classify_with_model.side_effect = APITimeoutError(
+        mock_analyze_with_model.side_effect = APITimeoutError(
             request=Request(
                 "POST",
                 "https://example.test/v1/chat/completions",
@@ -69,13 +72,13 @@ class LangGraphLlmAgentTests(unittest.TestCase):
         # 验证规则分类器成功接管分类任务。
         self.assertEqual(result["category"], "technical")
         self.assertEqual(
-            result["classification_source"],
+            result["analysis_source"],
             "rule_fallback",
         )
 
         # 验证状态中记录了触发降级的错误类型。
         self.assertEqual(
-            result["classification_error"],
+            result["analysis_error"],
             "APITimeoutError",
         )
 
@@ -90,16 +93,16 @@ class LangGraphLlmAgentTests(unittest.TestCase):
         self.assertEqual(result["response_source"], "local")
 
         # 验证系统确实先尝试过一次大模型分类。
-        mock_classify_with_model.assert_called_once_with(query)
+        mock_analyze_with_model.assert_called_once_with(query)
 
         # 分类模型已经失败时，不连续调用同一服务生成回复。
         mock_generate_reply.assert_not_called()
 
     @patch("src.langgraph_llm_agent.generate_reply_with_model")
-    @patch("src.langgraph_llm_agent.classify_with_model")
+    @patch("src.langgraph_llm_agent.analyze_with_model")
     def test_faq_answer_is_rewritten_by_controlled_model(
         self,
-        mock_classify_with_model,
+        mock_analyze_with_model,
         mock_generate_reply,
     ) -> None:
         # 这条问题能够命中退款时效 FAQ。
@@ -107,7 +110,10 @@ class LangGraphLlmAgentTests(unittest.TestCase):
         faq_answer = "退款申请审核通过后，原路退款通常在 3 至 5 个工作日到账。"
 
         # 模拟分类模型和回复模型都成功。
-        mock_classify_with_model.return_value = {"category": "billing"}
+        mock_analyze_with_model.return_value = {
+            "category": "billing",
+            "sentiment": "neutral",
+        }
         mock_generate_reply.return_value = {
             "response": "退款审核通过后，通常会在 3 至 5 个工作日内原路退回。"
         }
@@ -125,10 +131,10 @@ class LangGraphLlmAgentTests(unittest.TestCase):
         mock_generate_reply.assert_called_once_with(query, faq_answer)
 
     @patch("src.langgraph_llm_agent.generate_reply_with_model")
-    @patch("src.langgraph_llm_agent.classify_with_model")
+    @patch("src.langgraph_llm_agent.analyze_with_model")
     def test_reply_timeout_falls_back_to_faq_answer(
         self,
-        mock_classify_with_model,
+        mock_analyze_with_model,
         mock_generate_reply,
     ) -> None:
         # 准备一条能够命中 FAQ 的账单问题。
@@ -136,7 +142,10 @@ class LangGraphLlmAgentTests(unittest.TestCase):
         faq_answer = "退款申请审核通过后，原路退款通常在 3 至 5 个工作日到账。"
 
         # 分类成功，但回复模型发生超时。
-        mock_classify_with_model.return_value = {"category": "billing"}
+        mock_analyze_with_model.return_value = {
+            "category": "billing",
+            "sentiment": "neutral",
+        }
         mock_generate_reply.side_effect = APITimeoutError(
             request=Request(
                 "POST",
@@ -154,15 +163,18 @@ class LangGraphLlmAgentTests(unittest.TestCase):
         mock_generate_reply.assert_called_once_with(query, faq_answer)
 
     @patch("src.langgraph_llm_agent.generate_reply_with_model")
-    @patch("src.langgraph_llm_agent.classify_with_model")
+    @patch("src.langgraph_llm_agent.analyze_with_model")
     def test_missing_faq_uses_local_reply_without_model_call(
         self,
-        mock_classify_with_model,
+        mock_analyze_with_model,
         mock_generate_reply,
     ) -> None:
         # 这条技术问题不会命中当前 FAQ 知识库。
         query = "软件打开后一直崩溃"
-        mock_classify_with_model.return_value = {"category": "technical"}
+        mock_analyze_with_model.return_value = {
+            "category": "technical",
+            "sentiment": "neutral",
+        }
 
         result = run_langgraph_llm_customer_service_agent(query)
 
