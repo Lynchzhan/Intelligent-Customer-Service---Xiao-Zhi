@@ -188,3 +188,104 @@ class LangGraphLlmAgentTests(unittest.TestCase):
 
         # 不允许模型在没有知识依据时自由回答。
         mock_generate_reply.assert_not_called()
+
+    @patch("src.langgraph_llm_agent.generate_reply_with_model")
+    @patch("src.langgraph_llm_agent.analyze_with_model")
+    def test_negative_billing_query_skips_faq_and_reply_model(
+        self,
+        mock_analyze_with_model,
+        mock_generate_reply,
+    ) -> None:
+        # 准备一条同时包含“退款”账单信息和“太差了”负面情绪的问题。
+        query = "退款一个月还没到账，太差了！"
+
+        # 模拟一次综合大模型请求。
+        # 这里不是真实请求 API，而是直接构造模型成功返回的数据。
+        mock_analyze_with_model.return_value = {
+            "category": "billing",
+            "sentiment": "negative",
+        }
+
+        # 执行完整的大模型版客服工作流。
+        result = run_langgraph_llm_customer_service_agent(query)
+
+        # 验证业务分类结果。
+        self.assertEqual(result["category"], "billing")
+
+        # 验证负面情绪结果。
+        self.assertEqual(result["sentiment"], "negative")
+
+        # 验证综合分析确实来自大模型。
+        self.assertEqual(result["analysis_source"], "llm")
+
+        # 验证负面情绪优先级高于账单分类。
+        self.assertEqual(result["route"], "human_handoff")
+
+        # 验证最终回复使用本地人工转接模板。
+        self.assertEqual(
+            result["response"],
+            "您的问题已转交人工客服，请稍候。",
+        )
+
+        # 验证回复来源是本地代码，而不是回复模型。
+        self.assertEqual(result["response_source"], "local")
+
+        # 人工转接路线不需要查询 FAQ。
+        self.assertNotIn("faq_answer", result)
+
+        # 综合分析模型应该只调用一次。
+        mock_analyze_with_model.assert_called_once_with(query)
+
+        # 人工转接路线不能调用回复模型。
+        mock_generate_reply.assert_not_called()
+
+    @patch("src.langgraph_llm_agent.generate_reply_with_model")
+    @patch("src.langgraph_llm_agent.analyze_with_model")
+    def test_invalid_model_analysis_falls_back_to_rules(
+        self,
+        mock_analyze_with_model,
+        mock_generate_reply,
+    ) -> None:
+        # 准备一条包含技术关键词和负面情绪的问题。
+        query = "软件打开后一直崩溃，太差了！"
+
+        # 模拟模型返回非法分析结果。
+        # ValueError 表示模型返回的数据没有通过本地校验。
+        mock_analyze_with_model.side_effect = ValueError(
+            "模型返回了不支持的情绪结果。"
+        )
+
+        # 执行完整的大模型版客服工作流。
+        result = run_langgraph_llm_customer_service_agent(query)
+
+        # 模型分析失败后，规则分类器应该识别为技术问题。
+        self.assertEqual(result["category"], "technical")
+
+        # 模型分析失败后，规则情绪判断应该识别为负面。
+        self.assertEqual(result["sentiment"], "negative")
+
+        # 记录本次分析是规则降级结果。
+        self.assertEqual(result["analysis_source"], "rule_fallback")
+
+        # 保存异常类型，方便开发者排查问题。
+        self.assertEqual(result["analysis_error"], "ValueError")
+
+        # 负面情绪仍然优先触发人工转接。
+        self.assertEqual(result["route"], "human_handoff")
+
+        # 降级后仍然使用本地人工转接回复。
+        self.assertEqual(
+            result["response"],
+            "系统当前繁忙，已使用备用方式继续处理您的问题。\n"
+            "您的问题已转交人工客服，请稍候。",
+        )
+
+        # 回复来源是本地，而不是回复模型。
+        self.assertEqual(result["response_source"], "local")
+
+        # 验证模型分析确实只尝试了一次。
+        mock_analyze_with_model.assert_called_once_with(query)
+
+        # 分析已经失败，不应该继续调用回复模型。
+        mock_generate_reply.assert_not_called()
+

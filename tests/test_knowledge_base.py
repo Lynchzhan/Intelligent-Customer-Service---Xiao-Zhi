@@ -30,3 +30,22 @@ class KnowledgeBaseTests(unittest.TestCase):
             answer,
             "退款申请审核通过后，原路退款通常在 3 至 5 个工作日到账。",
         )
+
+    def test_already_received_refund_query_does_not_match_timing_faq(
+        self,
+    ) -> None:
+        # 用户已经说明退款到账，不是在询问到账时间。
+        answer = find_faq_answer("退款已经到账，谢谢客服！")
+
+        # 这类问题不应该使用退款时效 FAQ。
+        self.assertIsNone(answer)
+
+    def test_password_reset_query_returns_password_answer(self) -> None:
+        # 密码和重置分别命中主题关键词和意图关键词。
+        answer = find_faq_answer("我忘记密码了，怎么重置？")
+
+        # 命中后应该返回密码重置 FAQ 的完整答案。
+        self.assertEqual(
+            answer,
+            "请在登录页选择“忘记密码”，按提示完成密码重置。",
+        )

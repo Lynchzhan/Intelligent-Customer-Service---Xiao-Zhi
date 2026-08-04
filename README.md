@@ -17,11 +17,13 @@
 - 负面情绪优先转人工客服。
 - LangGraph 状态图和条件边：人工转接跳过 FAQ，自动路线进入 FAQ 检索。
 - 本地 FAQ 知识库：退款时效、客服工作时间和密码重置。
+- 意图感知的 FAQ 检索：分别判断业务主题关键词和用户意图关键词，减少 FAQ 误命中。
 - OpenAI 兼容模型分析器，一次返回分类和情绪，支持 JSON 输出、字段范围校验及重复 JSON 恢复。
 - 模型分析请求失败或任一字段不合法时，同时降级到本地分类和情绪规则，并记录分析来源和错误类型。
 - 发生分类降级时，向用户展示友好提示，同时不暴露底层异常名称。
 - 受控回复模块只根据已命中的 FAQ 答案组织语言；人工转接、无 FAQ 或分类降级时不会调用回复模型。
 - 回复模型失败时自动回退到 FAQ 原文，并记录回复来源和错误类型。
+- 多样本评估集和评估报告，统计分类、情绪、路由和 FAQ 状态准确率，以及模型降级次数。
 - 本地 `unittest` 测试，不在单元测试中发起真实模型请求。
 
 ## Architecture
@@ -59,9 +61,12 @@ flowchart TD
 ```text
 src/
   agent.py                Rule nodes, state definition, and manual workflow baseline
+  cli.py                  Interactive CLI for the rule-based workflow
+  evaluation_cases.py     Evaluation samples and expected labels
+  evaluation_runner.py    Batch evaluation and summary metrics
+  knowledge_base.py       Local FAQ data and intent-aware lookup
   langgraph_agent.py      Rule-based LangGraph workflow
   langgraph_llm_agent.py  LLM-classification LangGraph workflow
-  knowledge_base.py       Local FAQ data and keyword-score lookup
   model_config.py         .env loading and model configuration validation
   model_client.py         OpenAI-compatible client construction
   model_probe.py          Minimal live model connection probe
@@ -69,9 +74,9 @@ src/
   llm_responder.py        Controlled LLM reply request and response validation
   observability.py        Format classification and response sources for debugging
   llm_cli.py              Interactive CLI for the LLM workflow
-  cli.py                  Rule-based interactive CLI
 tests/
   test_agent.py                 Rule-based workflow tests
+  test_evaluation_runner.py     Evaluation behavior tests with mocked workflow results
   test_knowledge_base.py        FAQ lookup tests
   test_llm_classifier.py        Local LLM classifier tests with mocked API requests
   test_langgraph_llm_agent.py   LLM LangGraph tests with mocked classification
@@ -95,7 +100,19 @@ Run all local tests:
 python -m unittest discover -s .\tests -v
 ```
 
-The current local suite contains 31 tests. It does not call a real model API.
+The current local suite contains 37 tests. It does not call a real model API.
+
+Run the evaluation set:
+
+```powershell
+python -m src.evaluation_runner
+```
+
+The evaluation runner executes the LLM workflow on 9 labeled cases and compares
+the actual category, sentiment, route, and FAQ state with the expected results.
+It makes real model requests and may incur API cost. The cases cover billing,
+technical, general, positive, neutral, negative, FAQ hits, FAQ negative
+controls, and password reset.
 
 Run the rule-based interactive CLI:
 
@@ -137,7 +154,10 @@ For this query, the expected route is `billing_reply`, and the local FAQ answer 
 
 ## Test Strategy
 
+- The local suite currently contains 37 tests and does not make real model API requests.
 - Rule and FAQ tests exercise deterministic local business logic.
+- FAQ tests cover both positive matches and negative controls, including a query
+  where a refund has already arrived and therefore should not use a refund-timing answer.
 - LLM parser tests cover valid combined analysis, repeated identical JSON, invalid JSON, unsupported categories or sentiments, missing fields, and contradictory JSON objects.
 - LLM coordination tests mock `request_model_analysis`, so no API request is made.
 - LLM LangGraph tests mock `analyze_with_model`, while real routing, FAQ, and response nodes still execute.
@@ -145,13 +165,15 @@ For this query, the expected route is `billing_reply`, and the local FAQ answer 
 - The fallback path also verifies that the final user-facing message remains readable.
 - Controlled responder tests validate FAQ input protection, JSON parsing, repeated outputs, and contradictory outputs.
 - LangGraph responder tests verify model rewriting, human-handoff skipping, missing-FAQ skipping, classification-fallback skipping, and FAQ fallback after reply timeout.
+- Evaluation runner tests verify that semantically correct rule fallback and FAQ fallback results are recorded with their separate source fields.
+- The evaluation runner reports category, sentiment, route, and FAQ-state accuracy, plus analysis and response source counts.
 - Observability tests verify source and error information formatting without making API requests.
 - Live probes and live end-to-end commands are intentionally separate from `unittest`, because they depend on network availability, API credentials, quota, and model-service behavior.
 
 ## Known Limitations
 
 - The rule-based workflow still uses keyword sentiment analysis, while the LLM workflow obtains sentiment together with category in one request.
-- FAQ retrieval remains keyword based.
+- FAQ retrieval uses an in-memory knowledge base with required topic keywords and intent keywords. It is more precise than a simple keyword count, but it is not a vector-based RAG system.
 - Prompt restrictions and JSON validation reduce model risk but cannot prove semantic faithfulness; the original FAQ answer remains the trusted fallback.
 - The local FAQ knowledge base is a small in-memory list with no source citations or versioning.
 - Third-party model services can time out, be rate-limited, or return imperfect compatibility behavior. The classifier validates and safely handles repeated identical JSON, but conflicting results are rejected.
