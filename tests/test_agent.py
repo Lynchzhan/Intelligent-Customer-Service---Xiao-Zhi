@@ -33,6 +33,12 @@ class CustomerServiceAgentTests(unittest.TestCase):
         # 验证自动回复内容与当前规则一致。
         self.assertEqual(result["response"], "客服工作时间为每日 9:00 至 18:00。")
 
+        # 分类和情绪来自规则节点。
+        self.assertEqual(result["analysis_source"], "rule")
+
+        # 最终回复来自本地 FAQ 或本地回复模板。
+        self.assertEqual(result["response_source"], "local")
+
     def test_negative_technical_query_is_handed_to_human(self) -> None:
         # 准备一条同时包含技术关键词和负面情绪的问题。
         query = "软件打开后一直崩溃，太差了！"
@@ -51,6 +57,12 @@ class CustomerServiceAgentTests(unittest.TestCase):
 
         # 转人工路线应生成对应的提示语。
         self.assertEqual(result["response"], "您的问题已转交人工客服，请稍候。")
+
+        # 分类和情绪分析来自本地规则。
+        self.assertEqual(result["analysis_source"], "rule")
+
+        # 人工转接提示也是本地生成的。
+        self.assertEqual(result["response_source"], "local")
 
     def test_langgraph_matches_rule_based_agent_for_negative_billing_query(self) -> None:
         # 使用一条会触发人工转接的关键业务场景。

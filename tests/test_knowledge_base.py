@@ -1,9 +1,21 @@
 import unittest
 
-from src.knowledge_base import find_faq_answer
+from src.knowledge_base import find_faq_answer, find_faq_entry
 
 
 class KnowledgeBaseTests(unittest.TestCase):
+    def test_refund_timing_entry_returns_stable_id(self) -> None:
+        # 读取完整 FAQ 条目，而不只是兼容旧接口的答案字符串。
+        entry = find_faq_entry("退款一般多久到账？")
+
+        # 命中后必须同时拥有稳定 ID 和可信答案。
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["faq_id"], "refund_timing")
+        self.assertEqual(
+            entry["answer"],
+            "退款申请审核通过后，原路退款通常在 3 至 5 个工作日到账。",
+        )
+
     def test_refund_timing_query_returns_refund_answer(self) -> None:
         # 这条问题包含退款时效 FAQ 的全部关键词。
         answer = find_faq_answer("退款一般多久到账？")

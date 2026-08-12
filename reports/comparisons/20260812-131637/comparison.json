@@ -1,0 +1,291 @@
+{
+  "comparison_id": "20260812-131637",
+  "created_at": "2026-08-12T13:16:37.607884+00:00",
+  "sample_count": 50,
+  "baseline_summary": {
+    "total": 50,
+    "passed": 44,
+    "category_correct": 46,
+    "sentiment_correct": 48,
+    "route_correct": 45,
+    "faq_correct": 50,
+    "faq_id_correct": 50,
+    "analysis_source_counts": {
+      "rule": 50
+    },
+    "response_source_counts": {
+      "local": 50
+    },
+    "rule_fallback_count": 0,
+    "faq_fallback_count": 0,
+    "group_metrics": {
+      "complexity": {
+        "simple": {
+          "total": 18,
+          "passed": 16,
+          "pass_rate": 0.8888888888888888
+        },
+        "medium": {
+          "total": 20,
+          "passed": 18,
+          "pass_rate": 0.9
+        },
+        "complex": {
+          "total": 12,
+          "passed": 10,
+          "pass_rate": 0.8333333333333334
+        }
+      },
+      "tags": {
+        "billing": {
+          "total": 19,
+          "passed": 14,
+          "pass_rate": 0.7368421052631579
+        },
+        "faq_hit": {
+          "total": 13,
+          "passed": 13,
+          "pass_rate": 1.0
+        },
+        "neutral": {
+          "total": 27,
+          "passed": 23,
+          "pass_rate": 0.8518518518518519
+        },
+        "faq_miss": {
+          "total": 24,
+          "passed": 19,
+          "pass_rate": 0.7916666666666666
+        },
+        "technical": {
+          "total": 16,
+          "passed": 15,
+          "pass_rate": 0.9375
+        },
+        "negative": {
+          "total": 12,
+          "passed": 11,
+          "pass_rate": 0.9166666666666666
+        },
+        "human_handoff": {
+          "total": 12,
+          "passed": 11,
+          "pass_rate": 0.9166666666666666
+        },
+        "general": {
+          "total": 15,
+          "passed": 15,
+          "pass_rate": 1.0
+        },
+        "positive": {
+          "total": 11,
+          "passed": 10,
+          "pass_rate": 0.9090909090909091
+        },
+        "faq_negative_control": {
+          "total": 1,
+          "passed": 1,
+          "pass_rate": 1.0
+        },
+        "paraphrase": {
+          "total": 6,
+          "passed": 5,
+          "pass_rate": 0.8333333333333334
+        },
+        "boundary": {
+          "total": 9,
+          "passed": 8,
+          "pass_rate": 0.8888888888888888
+        },
+        "mixed_intent": {
+          "total": 6,
+          "passed": 5,
+          "pass_rate": 0.8333333333333334
+        },
+        "colloquial": {
+          "total": 1,
+          "passed": 1,
+          "pass_rate": 1.0
+        },
+        "repetition": {
+          "total": 1,
+          "passed": 1,
+          "pass_rate": 1.0
+        }
+      }
+    }
+  },
+  "candidate_summary": {
+    "total": 50,
+    "passed": 49,
+    "category_correct": 49,
+    "sentiment_correct": 50,
+    "route_correct": 49,
+    "faq_correct": 50,
+    "faq_id_correct": 50,
+    "analysis_source_counts": {
+      "llm": 50
+    },
+    "response_source_counts": {
+      "llm": 13,
+      "local": 37
+    },
+    "rule_fallback_count": 0,
+    "faq_fallback_count": 0,
+    "group_metrics": {
+      "complexity": {
+        "simple": {
+          "total": 18,
+          "passed": 18,
+          "pass_rate": 1.0
+        },
+        "medium": {
+          "total": 20,
+          "passed": 19,
+          "pass_rate": 0.95
+        },
+        "complex": {
+          "total": 12,
+          "passed": 12,
+          "pass_rate": 1.0
+        }
+      },
+      "tags": {
+        "billing": {
+          "total": 19,
+          "passed": 19,
+          "pass_rate": 1.0
+        },
+        "faq_hit": {
+          "total": 13,
+          "passed": 12,
+          "pass_rate": 0.9230769230769231
+        },
+        "neutral": {
+          "total": 27,
+          "passed": 27,
+          "pass_rate": 1.0
+        },
+        "faq_miss": {
+          "total": 24,
+          "passed": 24,
+          "pass_rate": 1.0
+        },
+        "technical": {
+          "total": 16,
+          "passed": 15,
+          "pass_rate": 0.9375
+        },
+        "negative": {
+          "total": 12,
+          "passed": 12,
+          "pass_rate": 1.0
+        },
+        "human_handoff": {
+          "total": 12,
+          "passed": 12,
+          "pass_rate": 1.0
+        },
+        "general": {
+          "total": 15,
+          "passed": 15,
+          "pass_rate": 1.0
+        },
+        "positive": {
+          "total": 11,
+          "passed": 10,
+          "pass_rate": 0.9090909090909091
+        },
+        "faq_negative_control": {
+          "total": 1,
+          "passed": 1,
+          "pass_rate": 1.0
+        },
+        "paraphrase": {
+          "total": 6,
+          "passed": 6,
+          "pass_rate": 1.0
+        },
+        "boundary": {
+          "total": 9,
+          "passed": 9,
+          "pass_rate": 1.0
+        },
+        "mixed_intent": {
+          "total": 6,
+          "passed": 6,
+          "pass_rate": 1.0
+        },
+        "colloquial": {
+          "total": 1,
+          "passed": 1,
+          "pass_rate": 1.0
+        },
+        "repetition": {
+          "total": 1,
+          "passed": 1,
+          "pass_rate": 1.0
+        }
+      }
+    }
+  },
+  "comparison": {
+    "total": 50,
+    "metrics": {
+      "overall": {
+        "baseline_correct": 44,
+        "candidate_correct": 49,
+        "total": 50,
+        "baseline_rate": 0.88,
+        "candidate_rate": 0.98,
+        "absolute_delta": 0.09999999999999998,
+        "relative_improvement": 0.1136363636363636
+      },
+      "category": {
+        "baseline_correct": 46,
+        "candidate_correct": 49,
+        "total": 50,
+        "baseline_rate": 0.92,
+        "candidate_rate": 0.98,
+        "absolute_delta": 0.05999999999999994,
+        "relative_improvement": 0.06521739130434775
+      },
+      "sentiment": {
+        "baseline_correct": 48,
+        "candidate_correct": 50,
+        "total": 50,
+        "baseline_rate": 0.96,
+        "candidate_rate": 1.0,
+        "absolute_delta": 0.040000000000000036,
+        "relative_improvement": 0.041666666666666706
+      },
+      "route": {
+        "baseline_correct": 45,
+        "candidate_correct": 49,
+        "total": 50,
+        "baseline_rate": 0.9,
+        "candidate_rate": 0.98,
+        "absolute_delta": 0.07999999999999996,
+        "relative_improvement": 0.08888888888888884
+      },
+      "faq": {
+        "baseline_correct": 50,
+        "candidate_correct": 50,
+        "total": 50,
+        "baseline_rate": 1.0,
+        "candidate_rate": 1.0,
+        "absolute_delta": 0.0,
+        "relative_improvement": 0.0
+      },
+      "faq_id": {
+        "baseline_correct": 50,
+        "candidate_correct": 50,
+        "total": 50,
+        "baseline_rate": 1.0,
+        "candidate_rate": 1.0,
+        "absolute_delta": 0.0,
+        "relative_improvement": 0.0
+      }
+    }
+  }
+}

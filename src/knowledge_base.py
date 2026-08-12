@@ -1,7 +1,14 @@
-from typing import TypedDict
+from typing import Literal, TypedDict
+
+
+# FAQ 的稳定标识，评估器使用它判断是否命中了正确知识。
+FaqId = Literal["refund_timing", "service_hours", "password_reset"]
 
 
 class FaqEntry(TypedDict):
+    # FAQ 的稳定标识，不随答案文字变化。
+    faq_id: FaqId
+
     # 必须先满足的业务主题关键词。
     required_keywords: tuple[str, ...]
 
@@ -16,6 +23,7 @@ class FaqEntry(TypedDict):
 # 每条 FAQ 都拆成“主题”和“意图”两层关键词。
 FAQ_ENTRIES: list[FaqEntry] = [
     {
+        "faq_id": "refund_timing",
         "required_keywords": ("退款",),
         "intent_keywords": (
             "多久",
@@ -28,6 +36,7 @@ FAQ_ENTRIES: list[FaqEntry] = [
         "answer": "退款申请审核通过后，原路退款通常在 3 至 5 个工作日到账。",
     },
     {
+        "faq_id": "service_hours",
         "required_keywords": ("客服",),
         "intent_keywords": (
             "工作时间",
@@ -39,6 +48,7 @@ FAQ_ENTRIES: list[FaqEntry] = [
         "answer": "人工客服工作时间为每日 9:00 至 18:00。",
     },
     {
+        "faq_id": "password_reset",
         "required_keywords": ("密码",),
         "intent_keywords": (
             "重置",
@@ -51,7 +61,7 @@ FAQ_ENTRIES: list[FaqEntry] = [
 ]
 
 
-def find_faq_answer(query: str) -> str | None:
+def find_faq_entry(query: str) -> FaqEntry | None:
     # 依次检查知识库中的每一条 FAQ。
     for entry in FAQ_ENTRIES:
         # 主题关键词必须全部出现。
@@ -68,7 +78,19 @@ def find_faq_answer(query: str) -> str | None:
 
         # 主题和意图同时满足，才认为 FAQ 命中。
         if required_matched and intent_matched:
-            return entry["answer"]
+            return entry
 
     # 所有 FAQ 都检查过但没有匹配时，返回 None。
     return None
+
+
+def find_faq_answer(query: str) -> str | None:
+    # 保留旧的字符串接口，避免现有调用方必须同时修改。
+    entry = find_faq_entry(query)
+
+    # 没有命中时继续返回 None。
+    if entry is None:
+        return None
+
+    # 命中时只提取答案文本，保持原函数的返回类型。
+    return entry["answer"]

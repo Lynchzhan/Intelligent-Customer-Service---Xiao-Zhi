@@ -1,5 +1,5 @@
 from typing import Literal, TypedDict
-from src.knowledge_base import find_faq_answer
+from src.knowledge_base import FaqId, find_faq_entry
 
 
 # 模型降级时展示给用户的友好提示，不暴露底层异常名称。
@@ -9,7 +9,7 @@ FALLBACK_USER_NOTICE = "系统当前繁忙，已使用备用方式继续处理�
 class CustomerState(TypedDict, total=False):
     query: str
     category: Literal["technical", "billing", "general"]
-    analysis_source: Literal["llm", "rule_fallback"]
+    analysis_source: Literal["llm", "rule", "rule_fallback"]
     analysis_error: str
     response_source: Literal["llm", "faq_fallback", "local"]
     response_error: str
@@ -20,6 +20,7 @@ class CustomerState(TypedDict, total=False):
         "general_reply",
         "human_handoff",
     ]
+    faq_id: FaqId
     faq_answer: str
     response: str
 
@@ -40,7 +41,14 @@ def categorize_query(state: CustomerState) -> CustomerState:
     else:
         category = "general"
 
-    return {"category": category}
+    return {
+        # 保存规则分类结果。
+        "category": category,
+
+        # 明确说明分类来自本地规则，
+        # 不是大模型分析。
+        "analysis_source": "rule",
+    }
 
 
 def analyze_sentiment(state: CustomerState) -> CustomerState:
@@ -56,7 +64,14 @@ def analyze_sentiment(state: CustomerState) -> CustomerState:
     else:
         sentiment = "neutral"
 
-    return {"sentiment": sentiment}
+    return {
+        # 保存规则情绪结果。
+        "sentiment": sentiment,
+
+        # 规则分类和规则情绪共同构成规则分析阶段。
+        # 这里继续使用 rule 作为来源标记。
+        "analysis_source": "rule",
+    }
 
 def choose_route(state: CustomerState) -> CustomerState:
     if state["sentiment"] == "negative":
@@ -73,14 +88,17 @@ def choose_route(state: CustomerState) -> CustomerState:
 
 def retrieve_faq_answer(state: CustomerState) -> CustomerState:
     # 使用用户原始问题检索本地 FAQ 知识库。
-    answer = find_faq_answer(state["query"])
+    entry = find_faq_entry(state["query"])
 
     # 未命中知识时，不更新状态。
-    if answer is None:
+    if entry is None:
         return {}
 
-    # 命中知识时，只返回 FAQ 答案这一项局部更新。
-    return {"faq_answer": answer}
+    # 命中知识时，同时保存稳定 ID 和答案文本。
+    return {
+        "faq_id": entry["faq_id"],
+        "faq_answer": entry["answer"],
+    }
 
 
 # def generate_response(state: CustomerState) -> CustomerState:
@@ -125,9 +143,22 @@ def generate_response(state: CustomerState) -> CustomerState:
 
     # 只在发生模型降级时增加用户可理解的提示。
     if state.get("analysis_source") == "rule_fallback":
-        return {"response": f"{FALLBACK_USER_NOTICE}\n{base_response}"}
+        return {
+            # 保存降级提示和本地生成的基础回复。
+            "response": f"{FALLBACK_USER_NOTICE}\n{base_response}",
 
-    return {"response": base_response}
+            # 即使发生规则降级，最终回复仍然来自本地逻辑。
+            "response_source": "local",
+        }
+
+    return {
+        # 保存最终给用户看的客服回复。
+        "response": base_response,
+
+        # 规则版 Agent 的回复来自本地逻辑：
+        # 可能是 FAQ 原文，也可能是路线模板。
+        "response_source": "local",
+    }
 
 
 def run_customer_service_agent(query: str) -> CustomerState:
