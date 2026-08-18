@@ -15,6 +15,7 @@ from src.evaluation_runner import (
 from src.langgraph_llm_agent import (
     run_langgraph_llm_customer_service_agent,
 )
+from src.model_config import load_model_config
 
 
 def select_evaluation_cases(
@@ -49,6 +50,12 @@ def run_llm_candidate_evaluation(
     # 选出并校验本次需要评估的样本。
     cases = select_evaluation_cases(limit)
 
+    # 在开始批量调用前先读取模型配置。
+    #
+    # 这样配置缺失时会立即停止，
+    # 不会先运行一批无效请求再发现无法保存模型元数据。
+    config = load_model_config()
+
     # 对每条样本调用大模型 LangGraph 工作流。
     #
     # 工作流会优先使用大模型完成分类和情绪分析；
@@ -66,6 +73,11 @@ def run_llm_candidate_evaluation(
     report_dir = save_evaluation_report(
         results,
         output_root=Path("reports/candidates"),
+        metadata={
+            "runner": "llm_candidate",
+            "mode": "llm",
+            "model_name": config.model,
+        },
     )
 
     # 同时返回内存中的结果和实际报告目录。

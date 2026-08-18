@@ -1,0 +1,64 @@
+{
+  "run_id": "20260812-143844",
+  "created_at": "2026-08-12T14:38:44.047807+00:00",
+  "sample_count": 3,
+  "summary": {
+    "total": 3,
+    "passed": 3,
+    "category_correct": 3,
+    "sentiment_correct": 3,
+    "route_correct": 3,
+    "faq_correct": 3,
+    "faq_id_correct": 3,
+    "analysis_source_counts": {
+      "llm": 3
+    },
+    "response_source_counts": {
+      "llm": 1,
+      "local": 2
+    },
+    "rule_fallback_count": 0,
+    "faq_fallback_count": 0,
+    "group_metrics": {
+      "complexity": {
+        "simple": {
+          "total": 2,
+          "passed": 2,
+          "pass_rate": 1.0
+        },
+        "medium": {
+          "total": 1,
+          "passed": 1,
+          "pass_rate": 1.0
+        }
+      },
+      "tags": {
+        "billing": {
+          "total": 2,
+          "passed": 2,
+          "pass_rate": 1.0
+        },
+        "faq_hit": {
+          "total": 1,
+          "passed": 1,
+          "pass_rate": 1.0
+        },
+        "neutral": {
+          "total": 3,
+          "passed": 3,
+          "pass_rate": 1.0
+        },
+        "faq_miss": {
+          "total": 2,
+          "passed": 2,
+          "pass_rate": 1.0
+        },
+        "technical": {
+          "total": 1,
+          "passed": 1,
+          "pass_rate": 1.0
+        }
+      }
+    }
+  }
+}

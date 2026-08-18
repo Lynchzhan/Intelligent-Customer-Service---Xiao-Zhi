@@ -1,0 +1,45 @@
+{
+  "knowledge_base_name": "customer_service_faq",
+  "knowledge_base_version": "2026.08.18",
+  "documents": [
+    {
+      "faq_id": "refund_timing",
+      "chunk_id": "refund_timing#0",
+      "title": "退款到账时效",
+      "content": "退款申请审核通过后，原路退款通常在 3 至 5 个工作日到账。",
+      "category": "billing",
+      "source": "project_faq",
+      "version": "1.0",
+      "updated_at": "2026-08-12",
+      "required_keywords": ["退款"],
+      "intent_keywords": ["多久", "什么时候", "几天", "工作日", "多长时间", "何时"],
+      "answer": "退款申请审核通过后，原路退款通常在 3 至 5 个工作日到账。"
+    },
+    {
+      "faq_id": "service_hours",
+      "chunk_id": "service_hours#0",
+      "title": "人工客服工作时间",
+      "content": "人工客服工作时间为每日 9:00 至 18:00。",
+      "category": "general",
+      "source": "project_faq",
+      "version": "1.0",
+      "updated_at": "2026-08-12",
+      "required_keywords": ["客服"],
+      "intent_keywords": ["工作时间", "上班时间", "几点", "什么时候", "何时"],
+      "answer": "人工客服工作时间为每日 9:00 至 18:00。"
+    },
+    {
+      "faq_id": "password_reset",
+      "chunk_id": "password_reset#0",
+      "title": "密码重置",
+      "content": "请在登录页选择“忘记密码”，按提示完成密码重置。",
+      "category": "technical",
+      "source": "project_faq",
+      "version": "1.0",
+      "updated_at": "2026-08-12",
+      "required_keywords": ["密码"],
+      "intent_keywords": ["重置", "忘记", "找回", "修改"],
+      "answer": "请在登录页选择“忘记密码”，按提示完成密码重置。"
+    }
+  ]
+}

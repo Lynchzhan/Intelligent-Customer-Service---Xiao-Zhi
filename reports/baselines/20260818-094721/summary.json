@@ -1,0 +1,136 @@
+{
+  "run_id": "20260818-094721",
+  "created_at": "2026-08-18T09:47:21.365325+00:00",
+  "sample_count": 50,
+  "metadata": {
+    "runner": "rule_baseline",
+    "mode": "offline",
+    "model_name": "rule_based"
+  },
+  "summary": {
+    "total": 50,
+    "passed": 44,
+    "category_correct": 46,
+    "sentiment_correct": 48,
+    "route_correct": 45,
+    "faq_correct": 50,
+    "faq_id_correct": 50,
+    "analysis_source_counts": {
+      "rule": 50
+    },
+    "response_source_counts": {
+      "local": 50
+    },
+    "rule_fallback_count": 0,
+    "faq_fallback_count": 0,
+    "group_metrics": {
+      "complexity": {
+        "simple": {
+          "total": 18,
+          "passed": 16,
+          "pass_rate": 0.8888888888888888
+        },
+        "medium": {
+          "total": 20,
+          "passed": 18,
+          "pass_rate": 0.9
+        },
+        "complex": {
+          "total": 12,
+          "passed": 10,
+          "pass_rate": 0.8333333333333334
+        }
+      },
+      "tags": {
+        "billing": {
+          "total": 19,
+          "passed": 14,
+          "pass_rate": 0.7368421052631579
+        },
+        "faq_hit": {
+          "total": 13,
+          "passed": 13,
+          "pass_rate": 1.0
+        },
+        "neutral": {
+          "total": 27,
+          "passed": 23,
+          "pass_rate": 0.8518518518518519
+        },
+        "faq_miss": {
+          "total": 24,
+          "passed": 19,
+          "pass_rate": 0.7916666666666666
+        },
+        "technical": {
+          "total": 16,
+          "passed": 15,
+          "pass_rate": 0.9375
+        },
+        "negative": {
+          "total": 12,
+          "passed": 11,
+          "pass_rate": 0.9166666666666666
+        },
+        "human_handoff": {
+          "total": 12,
+          "passed": 11,
+          "pass_rate": 0.9166666666666666
+        },
+        "general": {
+          "total": 15,
+          "passed": 15,
+          "pass_rate": 1.0
+        },
+        "positive": {
+          "total": 11,
+          "passed": 10,
+          "pass_rate": 0.9090909090909091
+        },
+        "faq_negative_control": {
+          "total": 1,
+          "passed": 1,
+          "pass_rate": 1.0
+        },
+        "paraphrase": {
+          "total": 6,
+          "passed": 5,
+          "pass_rate": 0.8333333333333334
+        },
+        "boundary": {
+          "total": 9,
+          "passed": 8,
+          "pass_rate": 0.8888888888888888
+        },
+        "mixed_intent": {
+          "total": 6,
+          "passed": 5,
+          "pass_rate": 0.8333333333333334
+        },
+        "colloquial": {
+          "total": 1,
+          "passed": 1,
+          "pass_rate": 1.0
+        },
+        "repetition": {
+          "total": 1,
+          "passed": 1,
+          "pass_rate": 1.0
+        }
+      }
+    },
+    "latency_observation_count": 50,
+    "latency_ms_average": 1.0819,
+    "latency_ms_p95": 1.363,
+    "model_call_total": 0,
+    "model_call_average": 0.0,
+    "input_tokens_total": null,
+    "output_tokens_total": null,
+    "estimated_cost_usd_total": null,
+    "token_observation_count": 0,
+    "cost_observation_count": 0,
+    "timeout_count": 0,
+    "parse_failure_count": 0,
+    "failure_type_counts": {}
+  }
+}

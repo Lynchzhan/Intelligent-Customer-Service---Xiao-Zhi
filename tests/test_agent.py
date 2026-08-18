@@ -1,11 +1,42 @@
 import unittest
+from unittest.mock import patch
 
-from src.agent import run_customer_service_agent
+from src.agent import retrieve_faq_answer, run_customer_service_agent
 
 from src.langgraph_agent import run_langgraph_customer_service_agent
 
 
 class CustomerServiceAgentTests(unittest.TestCase):
+    @patch("src.agent.search_faq_entries")
+    def test_low_retrieval_score_does_not_enter_faq_context(
+        self,
+        mock_search_faq_entries,
+    ) -> None:
+        # 模拟检索器返回一个相关度很低的候选。
+        # 这个候选只用于验证阈值分支，不调用真实模型。
+        mock_search_faq_entries.return_value = [
+            {
+                "entry": {
+                    "faq_id": "refund_timing",
+                    "title": "退款到账时效",
+                    "content": "退款申请审核通过后，原路退款通常在 3 至 5 个工作日到账。",
+                    "category": "billing",
+                    "source": "project_faq",
+                    "version": "1.0",
+                    "updated_at": "2026-08-12",
+                    "required_keywords": ("退款",),
+                    "intent_keywords": ("多久",),
+                    "answer": "退款申请审核通过后，原路退款通常在 3 至 5 个工作日到账。",
+                },
+                "score": 0.3,
+            }
+        ]
+
+        # 低于 MIN_RETRIEVAL_SCORE 时，检索节点应返回空更新。
+        update = retrieve_faq_answer({"query": "退款问题"})
+
+        self.assertEqual(update, {})
+
     def test_negative_billing_query_is_handed_to_human(self) -> None:
         # 准备一条同时包含账单信息和负面情绪的问题。
         query = "我申请的退款一个月还没到账，你们到底管不管，太差了！"
@@ -104,6 +135,42 @@ class CustomerServiceAgentTests(unittest.TestCase):
         # 验证检索结果和最终回复都采用 FAQ 的具体答案。
         self.assertEqual(result["faq_answer"], expected_answer)
         self.assertEqual(result["response"], expected_answer)
+
+        # 验证状态保留了实际检索到的知识正文。
+        # 这是后续 RAG 评估判断“模型基于什么上下文回复”的依据。
+        self.assertEqual(
+            result["retrieved_contexts"],
+            [expected_answer],
+        )
+
+        # 混合检索同时保留三层可解释证据：
+        # 1. keyword_score：主题/意图规则分；
+        # 2. text_score：本地 TF-IDF 文本相似度；
+        # 3. retrieval_score：两者融合后的最终分。
+        self.assertAlmostEqual(
+            result["retrieval_keyword_score"],
+            0.5 + 0.5 * (1 / 6),
+            places=5,
+        )
+        self.assertGreater(result["retrieval_text_score"], 0.0)
+        self.assertGreaterEqual(
+            result["retrieval_score"],
+            result["retrieval_keyword_score"],
+        )
+        self.assertEqual(
+            result["retrieval_method"],
+            "keyword_tfidf_hybrid_v1",
+        )
+
+        # 检索证据还应记录知识库版本和排名候选摘要。
+        self.assertEqual(
+            result["knowledge_base_version"],
+            "2026.08.18",
+        )
+        self.assertEqual(
+            result["retrieval_candidates"][0]["faq_id"],
+            "refund_timing",
+        )
 
 
 

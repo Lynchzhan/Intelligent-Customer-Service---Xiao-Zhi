@@ -14,6 +14,23 @@ from src.llm_classifier import analyze_with_model
 from src.llm_responder import generate_reply_with_model
 
 
+def _copy_usage_fields(
+    source: dict[str, object],
+    target: CustomerState,
+) -> None:
+    """把模型客户端提供的 usage 字段复制到工作流状态。"""
+
+    # usage 是可选信息；兼容服务没有提供时不写入状态。
+    for key in (
+        "input_tokens",
+        "output_tokens",
+        "estimated_cost_usd",
+    ):
+        value = source.get(key)
+        if value is not None:
+            target[key] = value
+
+
 def analyze_query_with_model(state: CustomerState) -> CustomerState:
     # 从工作流状态中读取用户原始问题。
     query = state["query"]
@@ -40,11 +57,13 @@ def analyze_query_with_model(state: CustomerState) -> CustomerState:
         }
 
     # 两个字段都验证成功时，记录本次综合分析来自大模型。
-    return {
+    result: CustomerState = {
         "category": model_update["category"],
         "sentiment": model_update["sentiment"],
         "analysis_source": "llm",
     }
+    _copy_usage_fields(model_update, result)
+    return result
 
 
 def generate_controlled_response(state: CustomerState) -> CustomerState:
@@ -84,10 +103,12 @@ def generate_controlled_response(state: CustomerState) -> CustomerState:
         }
 
     # 模型回复成功时，记录最终回复来自受控模型。
-    return {
+    result: CustomerState = {
         "response": model_update["response"],
         "response_source": "llm",
     }
+    _copy_usage_fields(model_update, result)
+    return result
 
 
 # 使用统一的客服状态结构创建大模型版工作流。

@@ -1,9 +1,19 @@
 from typing import Literal, TypedDict
-from src.knowledge_base import FaqId, find_faq_entry
+from src.knowledge_base import (
+    FaqId,
+    KNOWLEDGE_BASE_METADATA,
+    RetrievalCandidate,
+)
+from src.rag_retriever import search_faq_entries
 
 
 # 模型降级时展示给用户的友好提示，不暴露底层异常名称。
 FALLBACK_USER_NOTICE = "系统当前繁忙，已使用备用方式继续处理您的问题。"
+
+# FAQ 只有达到这个最低分数，才会进入最终回复上下文。
+# 0.55 能保留当前已验证的 FAQ 问法（退款时效约为 0.5833），
+# 同时为明显低相关候选保留拒绝空间。
+MIN_RETRIEVAL_SCORE = 0.55
 
 
 class CustomerState(TypedDict, total=False):
@@ -22,6 +32,24 @@ class CustomerState(TypedDict, total=False):
     ]
     faq_id: FaqId
     faq_answer: str
+    retrieved_contexts: list[str]
+    retrieval_score: float
+    retrieval_keyword_score: float
+    retrieval_text_score: float
+    retrieval_method: str
+    retrieval_candidates: list[RetrievalCandidate]
+    knowledge_base_name: str
+    knowledge_base_version: str
+
+    # 模型响应中可选的输入 Token 数量。
+    input_tokens: int
+
+    # 模型响应中可选的输出 Token 数量。
+    output_tokens: int
+
+    # 根据环境变量价格配置计算出的估算成本。
+    estimated_cost_usd: float
+
     response: str
 
 
@@ -88,16 +116,57 @@ def choose_route(state: CustomerState) -> CustomerState:
 
 def retrieve_faq_answer(state: CustomerState) -> CustomerState:
     # 使用用户原始问题检索本地 FAQ 知识库。
-    entry = find_faq_entry(state["query"])
+    # 检索器会返回 Top-K 候选；当前受控回复只采用第一名正文，
+    # 其余候选以摘要形式留下，供评估、调试和后续网页展示使用。
+    matches = search_faq_entries(
+        state["query"],
+        top_k=3,
+    )
 
     # 未命中知识时，不更新状态。
-    if entry is None:
+    if not matches:
         return {}
 
-    # 命中知识时，同时保存稳定 ID 和答案文本。
+    # 取出排名第一的候选及其检索分数。
+    best_match = matches[0]
+    entry = best_match["entry"]
+    retrieval_score = best_match["score"]
+
+    # 分数低于最低阈值时，不把候选伪装成可信 FAQ。
+    # 返回空更新后，后续回复节点会使用本地通用模板。
+    if retrieval_score < MIN_RETRIEVAL_SCORE:
+        return {}
+
+    # 将 Top-K 候选转成紧凑、可序列化的检索证据。
+    # 正文只保存在 retrieved_contexts 中，避免状态和报告重复膨胀。
+    retrieval_candidates: list[RetrievalCandidate] = [
+        {
+            "rank": index,
+            "faq_id": match["entry"]["faq_id"],
+            "chunk_id": match["entry"]["chunk_id"],
+            "title": match["entry"]["title"],
+            "source": match["entry"]["source"],
+            "version": match["entry"]["version"],
+            "score": match["score"],
+            "keyword_score": match["keyword_score"],
+            "text_score": match["text_score"],
+        }
+        for index, match in enumerate(matches, start=1)
+    ]
+
+    # 命中知识时，同时保存稳定 ID、兼容旧流程的答案文本，
+    # 以及实际检索到的原始上下文。
     return {
         "faq_id": entry["faq_id"],
         "faq_answer": entry["answer"],
+        "retrieved_contexts": [entry["content"]],
+        "retrieval_score": retrieval_score,
+        "retrieval_keyword_score": best_match["keyword_score"],
+        "retrieval_text_score": best_match["text_score"],
+        "retrieval_method": best_match["retrieval_method"],
+        "retrieval_candidates": retrieval_candidates,
+        "knowledge_base_name": KNOWLEDGE_BASE_METADATA["name"],
+        "knowledge_base_version": KNOWLEDGE_BASE_METADATA["version"],
     }
 
 

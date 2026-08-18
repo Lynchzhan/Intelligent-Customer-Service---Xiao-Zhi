@@ -1,8 +1,10 @@
 import json
+import math
 from collections import Counter
 from datetime import datetime, timezone
+from time import perf_counter
 from pathlib import Path
-from typing import Callable, TypedDict, cast
+from typing import Callable, NotRequired, TypedDict, cast
 from src.agent import CustomerState
 
 from src.evaluation_cases import (
@@ -11,7 +13,7 @@ from src.evaluation_cases import (
     EvaluationCase,
     validate_evaluation_cases,
 )
-from src.knowledge_base import FaqId
+from src.knowledge_base import FaqId, RetrievalCandidate
 from src.langgraph_llm_agent import run_langgraph_llm_customer_service_agent
 
 
@@ -77,6 +79,27 @@ class EvaluationResult(TypedDict):
     # 实际 FAQ 标识是否与预期一致。
     faq_id_ok: bool
 
+    # 实际检索到的知识上下文。
+    #
+    # 真实评估结果会始终记录这个字段。
+    # 使用 NotRequired 是为了兼容只测试汇总逻辑的旧测试夹具。
+    retrieved_contexts: NotRequired[list[str]]
+
+    # 实际检索候选的相关性分数。
+    #
+    # FAQ 未命中时保存 None，而不是伪造一个分数。
+    retrieval_score: NotRequired[float | None]
+
+    # 混合检索的两部分证据。FAQ 未命中时均为 None。
+    retrieval_keyword_score: NotRequired[float | None]
+    retrieval_text_score: NotRequired[float | None]
+
+    # 可追踪本次使用了哪种算法、哪版知识库，以及保留的 Top-K 候选摘要。
+    retrieval_method: NotRequired[str | None]
+    retrieval_candidates: NotRequired[list[RetrievalCandidate]]
+    knowledge_base_name: NotRequired[str | None]
+    knowledge_base_version: NotRequired[str | None]
+
     # 样本难度和标签会被复制到结果中，方便分组统计。
     complexity: Complexity
     tags: list[str]
@@ -84,8 +107,35 @@ class EvaluationResult(TypedDict):
     # 分类和情绪分析来源，例如 llm 或 rule_fallback。
     analysis_source: str
 
+    # 分类阶段发生的错误类型；没有错误时字段可以不存在。
+    analysis_error: NotRequired[str | None]
+
     # 最终回复来源，例如 llm、faq_fallback 或 local。
     response_source: str
+
+    # 回复阶段发生的错误类型；没有错误时字段可以不存在。
+    response_error: NotRequired[str | None]
+
+    # 单条样本从调用 Agent 到返回最终状态的耗时。
+    latency_ms: NotRequired[float]
+
+    # 分类阶段实际尝试的大模型调用次数。
+    analysis_model_calls: NotRequired[int]
+
+    # 回复阶段实际尝试的大模型调用次数。
+    response_model_calls: NotRequired[int]
+
+    # 当前样本的大模型调用总次数。
+    model_call_count: NotRequired[int]
+
+    # 如果模型客户端提供 usage 信息，则保存输入 Token 数。
+    input_tokens: NotRequired[int | None]
+
+    # 如果模型客户端提供 usage 信息，则保存输出 Token 数。
+    output_tokens: NotRequired[int | None]
+
+    # 如果调用方提供价格配置，则保存本条样本的估算成本。
+    estimated_cost_usd: NotRequired[float | None]
 
 
 class ComparisonMetric(TypedDict):
@@ -145,6 +195,33 @@ class EvaluationSummary(TypedDict):
     # 按复杂度和标签划分的分组指标。
     group_metrics: "GroupMetrics"
 
+    # 运行效率指标。
+    latency_observation_count: int
+    latency_ms_average: float
+    latency_ms_p95: float
+    model_call_total: int
+    model_call_average: float
+
+    # Token 和成本指标。
+    #
+    # 如果模型响应没有提供 usage 信息，则使用 None，
+    # 明确表示“没有观测到”，而不是“实际为零”。
+    input_tokens_total: int | None
+    output_tokens_total: int | None
+    estimated_cost_usd_total: float | None
+    token_observation_count: int
+    cost_observation_count: int
+
+    # 失败类型统计。
+    timeout_count: int
+    parse_failure_count: int
+    failure_type_counts: dict[str, int]
+
+    # RAG 检索可观测性。只统计真实命中，不把 FAQ 未命中伪装成零分检索。
+    retrieval_hit_count: int
+    retrieval_method_counts: dict[str, int]
+    knowledge_base_version_counts: dict[str, int]
+
 
 class GroupMetric(TypedDict):
     # 该分组包含的样本总数。
@@ -165,6 +242,45 @@ class GroupMetrics(TypedDict):
     tags: dict[str, GroupMetric]
 
 
+def _calculate_p95(values: list[float]) -> float:
+    """使用最近秩方法计算一个简单、可解释的 P95。"""
+
+    # 没有样本时，返回 0.0，避免除零或索引错误。
+    if not values:
+        return 0.0
+
+    # 排序后取覆盖 95% 样本的最小位置。
+    ordered = sorted(values)
+    rank = math.ceil(len(ordered) * 0.95) - 1
+    index = max(0, min(rank, len(ordered) - 1))
+    return ordered[index]
+
+
+def _infer_model_call_counts(
+    analysis_source: str,
+    response_source: str,
+) -> tuple[int, int]:
+    """根据当前工作流的来源字段推断两个阶段的调用次数。"""
+
+    # llm 表示分类模型成功调用；
+    # rule_fallback 表示分类模型先尝试、随后才降级。
+    analysis_calls = (
+        1
+        if analysis_source in {"llm", "rule_fallback"}
+        else 0
+    )
+
+    # llm 表示回复模型成功调用；
+    # faq_fallback 表示回复模型先尝试、随后回退到 FAQ。
+    response_calls = (
+        1
+        if response_source in {"llm", "faq_fallback"}
+        else 0
+    )
+
+    return analysis_calls, response_calls
+
+
 def evaluate_case(
     case: EvaluationCase,
     agent_runner: AgentRunner | None = None,
@@ -182,8 +298,18 @@ def evaluate_case(
     if agent_runner is None:
         agent_runner = run_langgraph_llm_customer_service_agent
 
+    # 记录单条样本的开始时间。
+    # 这里测量的是完整 Agent 调用耗时，而不是某一个节点耗时。
+    started_at = perf_counter()
+
     # 使用传入的 Agent 执行用户问题。
     final_state = agent_runner(case["query"])
+
+    # 将高精度计时器转换成毫秒，方便写入 JSON 和终端。
+    latency_ms = round(
+        (perf_counter() - started_at) * 1000,
+        3,
+    )
 
     # 判断最终状态中是否存在 faq_answer 这个键。
     actual_faq_in_state = "faq_answer" in final_state
@@ -197,6 +323,22 @@ def evaluate_case(
     route_ok = final_state["route"] == case["expected_route"]
     faq_ok = actual_faq_in_state == case["expected_faq_in_state"]
     faq_id_ok = actual_faq_id == case["expected_faq_id"]
+
+    # 读取来源字段，后面用于推断模型调用次数。
+    analysis_source = final_state.get(
+        "analysis_source",
+        "unknown",
+    )
+    response_source = final_state.get(
+        "response_source",
+        "unknown",
+    )
+    analysis_model_calls, response_model_calls = (
+        _infer_model_call_counts(
+            analysis_source,
+            response_source,
+        )
+    )
 
     # 五项检查全部通过，样本才算整体通过。
     passed = (
@@ -227,10 +369,49 @@ def evaluate_case(
         "actual_faq_id": actual_faq_id,
         "expected_faq_id": case["expected_faq_id"],
         "faq_id_ok": faq_id_ok,
+        "retrieved_contexts": final_state.get(
+            "retrieved_contexts",
+            [],
+        ),
+        "retrieval_score": final_state.get(
+            "retrieval_score",
+        ),
+        "retrieval_keyword_score": final_state.get(
+            "retrieval_keyword_score",
+        ),
+        "retrieval_text_score": final_state.get(
+            "retrieval_text_score",
+        ),
+        "retrieval_method": final_state.get(
+            "retrieval_method",
+        ),
+        "retrieval_candidates": final_state.get(
+            "retrieval_candidates",
+            [],
+        ),
+        "knowledge_base_name": final_state.get(
+            "knowledge_base_name",
+        ),
+        "knowledge_base_version": final_state.get(
+            "knowledge_base_version",
+        ),
         "complexity": case["complexity"],
         "tags": case["tags"],
-        "analysis_source": final_state.get("analysis_source", "unknown"),
-        "response_source": final_state.get("response_source", "unknown"),
+        "analysis_source": analysis_source,
+        "analysis_error": final_state.get("analysis_error"),
+        "response_source": response_source,
+        "response_error": final_state.get("response_error"),
+        "latency_ms": latency_ms,
+        "analysis_model_calls": analysis_model_calls,
+        "response_model_calls": response_model_calls,
+        "model_call_count": (
+            analysis_model_calls + response_model_calls
+        ),
+        "input_tokens": final_state.get("input_tokens"),
+        "output_tokens": final_state.get("output_tokens"),
+        "estimated_cost_usd": final_state.get(
+            "estimated_cost_usd",
+        ),
     }
 
 
@@ -341,6 +522,99 @@ def build_summary(results: list[EvaluationResult]) -> EvaluationSummary:
     # 生成复杂度和标签维度的分组指标。
     group_metrics = build_group_metrics(results)
 
+    # 读取每条结果的耗时。
+    latency_values = [
+        float(result["latency_ms"])
+        for result in results
+        if (
+            "latency_ms" in result
+            and result["latency_ms"] is not None
+        )
+    ]
+
+    # 读取每条结果推断出的模型调用次数。
+    model_call_values = [
+        int(
+            result.get(
+                "model_call_count",
+                sum(
+                    _infer_model_call_counts(
+                        result["analysis_source"],
+                        result["response_source"],
+                    )
+                ),
+            )
+        )
+        for result in results
+    ]
+
+    # 只有真正观测到 Token 时，才计算总量。
+    input_token_values = [
+        result["input_tokens"]
+        for result in results
+        if result.get("input_tokens") is not None
+    ]
+    output_token_values = [
+        result["output_tokens"]
+        for result in results
+        if result.get("output_tokens") is not None
+    ]
+    cost_values = [
+        result["estimated_cost_usd"]
+        for result in results
+        if result.get("estimated_cost_usd") is not None
+    ]
+
+    # 收集分析阶段和回复阶段的错误类型。
+    failure_types = [
+        error_name
+        for result in results
+        for error_name in (
+            result.get("analysis_error"),
+            result.get("response_error"),
+        )
+        if error_name
+    ]
+    failure_type_counts = dict(Counter(failure_types))
+
+    # 超时和解析失败分别统计，便于定位质量问题的来源。
+    timeout_names = {
+        "APITimeoutError",
+        "TimeoutError",
+    }
+    timeout_count = sum(
+        1
+        for error_name in failure_types
+        if error_name in timeout_names
+    )
+    parse_failure_count = sum(
+        1
+        for error_name in failure_types
+        if error_name == "ValueError"
+    )
+
+    # 仅在状态真正存在 faq_answer 时算作检索命中。
+    # 这样 FAQ 未命中不会被误解成“检索成功但分数为零”。
+    retrieval_hit_results = [
+        result
+        for result in results
+        if result["actual_faq_in_state"]
+    ]
+    retrieval_method_counts = dict(
+        Counter(
+            method
+            for result in retrieval_hit_results
+            if (method := result.get("retrieval_method"))
+        )
+    )
+    knowledge_base_version_counts = dict(
+        Counter(
+            version
+            for result in retrieval_hit_results
+            if (version := result.get("knowledge_base_version"))
+        )
+    )
+
     # 返回普通 Python 字典，后续可以直接写入 JSON 文件。
     return {
         "total": total,
@@ -355,6 +629,49 @@ def build_summary(results: list[EvaluationResult]) -> EvaluationSummary:
         "rule_fallback_count": rule_fallback_count,
         "faq_fallback_count": faq_fallback_count,
         "group_metrics": group_metrics,
+        "latency_observation_count": len(latency_values),
+        "latency_ms_average": (
+            sum(latency_values) / len(latency_values)
+            if latency_values
+            else 0.0
+        ),
+        "latency_ms_p95": _calculate_p95(latency_values),
+        "model_call_total": sum(model_call_values),
+        "model_call_average": (
+            sum(model_call_values) / total
+            if total
+            else 0.0
+        ),
+        "input_tokens_total": (
+            sum(input_token_values)
+            if input_token_values
+            else None
+        ),
+        "output_tokens_total": (
+            sum(output_token_values)
+            if output_token_values
+            else None
+        ),
+        "estimated_cost_usd_total": (
+            round(sum(cost_values), 8)
+            if cost_values
+            else None
+        ),
+        "token_observation_count": sum(
+            1
+            for result in results
+            if (
+                result.get("input_tokens") is not None
+                or result.get("output_tokens") is not None
+            )
+        ),
+        "cost_observation_count": len(cost_values),
+        "timeout_count": timeout_count,
+        "parse_failure_count": parse_failure_count,
+        "failure_type_counts": failure_type_counts,
+        "retrieval_hit_count": len(retrieval_hit_results),
+        "retrieval_method_counts": retrieval_method_counts,
+        "knowledge_base_version_counts": knowledge_base_version_counts,
     }
 
 
@@ -501,6 +818,7 @@ def save_evaluation_report(
     results: list[EvaluationResult],
     output_root: Path = Path("reports/runs"),
     run_id: str | None = None,
+    metadata: dict[str, object] | None = None,
 ) -> Path:
     # 没有显式传入 run_id 时，使用 UTC 时间生成本次运行的目录名。
     if run_id is None:
@@ -525,6 +843,7 @@ def save_evaluation_report(
         "run_id": run_id,
         "created_at": created_at,
         "sample_count": len(results),
+        "metadata": metadata or {},
         "summary": build_summary(results),
     }
     summary_path = run_dir / "summary.json"
@@ -645,6 +964,40 @@ def print_summary(results: list[EvaluationResult]) -> None:
     print(f"回复来源统计：{summary['response_source_counts']}")
     print(f"分析降级次数：{summary['rule_fallback_count']}")
     print(f"回复降级次数：{summary['faq_fallback_count']}")
+    print(
+        "延迟观测样本数："
+        f"{summary['latency_observation_count']}"
+    )
+    print(
+        "平均延迟："
+        f"{summary['latency_ms_average']:.3f} ms"
+    )
+    print(
+        "P95 延迟："
+        f"{summary['latency_ms_p95']:.3f} ms"
+    )
+    print(f"模型调用总次数：{summary['model_call_total']}")
+    print(
+        "平均每条模型调用次数："
+        f"{summary['model_call_average']:.3f}"
+    )
+    print(f"输入 Token 总数：{summary['input_tokens_total']}")
+    print(f"输出 Token 总数：{summary['output_tokens_total']}")
+    print(
+        "估算成本（美元）："
+        f"{summary['estimated_cost_usd_total']}"
+    )
+    print(f"Token 观测样本数：{summary['token_observation_count']}")
+    print(f"成本观测样本数：{summary['cost_observation_count']}")
+    print(f"超时次数：{summary['timeout_count']}")
+    print(f"解析失败次数：{summary['parse_failure_count']}")
+    print(f"失败类型统计：{summary['failure_type_counts']}")
+    print(f"RAG 检索命中次数：{summary['retrieval_hit_count']}")
+    print(f"RAG 检索方法统计：{summary['retrieval_method_counts']}")
+    print(
+        "知识库版本统计："
+        f"{summary['knowledge_base_version_counts']}"
+    )
     print(f"复杂度分组指标：{summary['group_metrics']['complexity']}")
     print(f"标签分组指标：{summary['group_metrics']['tags']}")
 
@@ -687,8 +1040,26 @@ def print_report(results: list[EvaluationResult]) -> None:
             f"{result['actual_faq_id']} / 预期 {result['expected_faq_id']} "
             f"({'OK' if result['faq_id_ok'] else 'FAIL'})"
         )
+        print(
+            "检索上下文数量："
+            f"{len(result.get('retrieved_contexts', []))}"
+        )
+        print(
+            "检索分数："
+            f"{result.get('retrieval_score')}"
+        )
+        print(
+            "单条耗时："
+            f"{(result.get('latency_ms') or 0.0):.3f} ms"
+        )
+        print(
+            "模型调用次数："
+            f"{result.get('model_call_count', 0)}"
+        )
         print(f"分析来源：{result['analysis_source']}")
+        print(f"分析错误：{result.get('analysis_error')}")
         print(f"回复来源：{result['response_source']}")
+        print(f"回复错误：{result.get('response_error')}")
 
 
 def main() -> None:

@@ -1,8 +1,9 @@
 import json
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 from src.model_client import create_openai_client
 from src.model_config import load_model_config
+from src.model_usage import attach_usage
 
 
 # 限制问题分类只能是三种客服问题之一。
@@ -16,6 +17,11 @@ class ModelAnalysis(TypedDict):
     # 一次模型分析必须同时包含问题分类和情绪判断。
     category: Category
     sentiment: Sentiment
+
+    # 兼容支持 usage 的模型服务。
+    input_tokens: NotRequired[int]
+    output_tokens: NotRequired[int]
+    estimated_cost_usd: NotRequired[float]
 
 
 # 要求模型一次返回固定格式的问题分类和情绪分析结果。
@@ -71,7 +77,9 @@ def request_model_analysis(query: str) -> str:
     if content is None:
         raise ValueError("模型没有返回分析结果。")
 
-    return content
+    # 保留原始文本的同时附加 usage 元数据。
+    # 返回值仍然是 str 的子类，不会破坏现有调用接口。
+    return attach_usage(content, response)
 
 
 def parse_model_analysis(content: str) -> ModelAnalysis:
@@ -134,4 +142,22 @@ def analyze_with_model(query: str) -> ModelAnalysis:
     content = request_model_analysis(query)
 
     # 两个字段都通过本地校验后，返回完整分析结果。
-    return parse_model_analysis(content)
+    analysis = parse_model_analysis(content)
+
+    # 测试中的普通字符串没有 usage；
+    # 真实兼容服务返回的 UsageText 可能包含这些字段。
+    usage = getattr(content, "usage", {})
+    if usage:
+        analysis.update(
+            {
+                key: usage[key]
+                for key in (
+                    "input_tokens",
+                    "output_tokens",
+                    "estimated_cost_usd",
+                )
+                if key in usage
+            }
+        )
+
+    return analysis

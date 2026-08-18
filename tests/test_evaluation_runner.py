@@ -81,6 +81,10 @@ class EvaluationRunnerTests(unittest.TestCase):
                 [result],
                 output_root=temp_dir,
                 run_id="test-run",
+                metadata={
+                    "runner": "test",
+                    "mode": "offline",
+                },
             )
 
             # 验证函数返回了约定的运行目录。
@@ -100,6 +104,13 @@ class EvaluationRunnerTests(unittest.TestCase):
             # 汇总文件包含运行标识、样本数量和统计结果。
             self.assertEqual(summary_payload["run_id"], "test-run")
             self.assertEqual(summary_payload["sample_count"], 1)
+            self.assertEqual(
+                summary_payload["metadata"],
+                {
+                    "runner": "test",
+                    "mode": "offline",
+                },
+            )
             self.assertIn("created_at", summary_payload)
             self.assertEqual(summary_payload["summary"]["passed"], 1)
             self.assertEqual(
@@ -113,6 +124,222 @@ class EvaluationRunnerTests(unittest.TestCase):
         finally:
             # 无论断言成功还是失败，都删除本次测试创建的目录。
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_evaluate_case_records_retrieval_and_runtime_metrics(self) -> None:
+        # 构造一条 FAQ 命中且回复模型回退的测试样本。
+        case: EvaluationCase = {
+            "name": "runtime_evidence_sample",
+            "query": "退款一般多久到账？",
+            "expected_category": "billing",
+            "expected_sentiment": "neutral",
+            "expected_route": "billing_reply",
+            "expected_faq_in_state": True,
+            "expected_faq_id": "refund_timing",
+            "complexity": "simple",
+            "tags": ["billing", "faq_hit", "neutral"],
+        }
+
+        faq_answer = (
+            "退款申请审核通过后，"
+            "原路退款通常在 3 至 5 个工作日到账。"
+        )
+
+        # 使用本地函数模拟完整 Agent，完全不调用真实模型。
+        def fake_agent_runner(query: str) -> CustomerState:
+            return {
+                "query": query,
+                "category": "billing",
+                "sentiment": "neutral",
+                "route": "billing_reply",
+                "faq_id": "refund_timing",
+                "faq_answer": faq_answer,
+                "retrieved_contexts": [faq_answer],
+                "retrieval_score": 0.834833,
+                "retrieval_keyword_score": 0.583333,
+                "retrieval_text_score": 0.603599,
+                "retrieval_method": "keyword_tfidf_hybrid_v1",
+                "retrieval_candidates": [
+                    {
+                        "rank": 1,
+                        "faq_id": "refund_timing",
+                        "chunk_id": "refund_timing#0",
+                        "title": "退款到账时效",
+                        "source": "project_faq",
+                        "version": "1.0",
+                        "score": 0.834833,
+                        "keyword_score": 0.583333,
+                        "text_score": 0.603599,
+                    }
+                ],
+                "knowledge_base_name": "customer_service_faq",
+                "knowledge_base_version": "2026.08.18",
+                "analysis_source": "llm",
+                "response_source": "faq_fallback",
+                "response_error": "APITimeoutError",
+                "response": faq_answer,
+                "input_tokens": 18,
+                "output_tokens": 7,
+                "estimated_cost_usd": 0.0012,
+            }
+
+        # 评估器会在 Agent 调用外层测量耗时，
+        # 并根据来源字段推断两个模型阶段的调用次数。
+        result = evaluate_case(
+            case,
+            agent_runner=fake_agent_runner,
+        )
+
+        # 验证检索证据被逐条结果保存。
+        self.assertEqual(
+            result["retrieved_contexts"],
+            [faq_answer],
+        )
+        self.assertAlmostEqual(
+            result["retrieval_score"],
+            0.834833,
+        )
+        self.assertAlmostEqual(
+            result["retrieval_keyword_score"],
+            0.583333,
+        )
+        self.assertGreater(result["retrieval_text_score"], 0.0)
+        self.assertEqual(
+            result["retrieval_method"],
+            "keyword_tfidf_hybrid_v1",
+        )
+        self.assertEqual(
+            result["knowledge_base_version"],
+            "2026.08.18",
+        )
+        self.assertEqual(
+            result["retrieval_candidates"][0]["chunk_id"],
+            "refund_timing#0",
+        )
+
+        # llm 分类一次，faq_fallback 表示回复模型也尝试过一次。
+        self.assertEqual(result["analysis_model_calls"], 1)
+        self.assertEqual(result["response_model_calls"], 1)
+        self.assertEqual(result["model_call_count"], 2)
+
+        # 验证耗时、Token 和成本字段都被保留。
+        self.assertGreaterEqual(result["latency_ms"], 0.0)
+        self.assertEqual(result["input_tokens"], 18)
+        self.assertEqual(result["output_tokens"], 7)
+        self.assertAlmostEqual(
+            result["estimated_cost_usd"],
+            0.0012,
+        )
+        self.assertEqual(result["response_error"], "APITimeoutError")
+
+    def test_build_summary_records_runtime_metrics_and_failures(self) -> None:
+        # 用一个局部工厂函数减少重复字段，
+        # 让测试重点集中在运行指标统计。
+        def make_result(
+            name: str,
+            latency_ms: float,
+            model_call_count: int,
+            analysis_error: str | None = None,
+            response_error: str | None = None,
+            input_tokens: int | None = None,
+            output_tokens: int | None = None,
+            estimated_cost_usd: float | None = None,
+        ) -> EvaluationResult:
+            return {
+                "name": name,
+                "query": "测试问题",
+                "passed": True,
+                "category_ok": True,
+                "sentiment_ok": True,
+                "route_ok": True,
+                "faq_ok": True,
+                "actual_category": "general",
+                "expected_category": "general",
+                "actual_sentiment": "neutral",
+                "expected_sentiment": "neutral",
+                "actual_route": "general_reply",
+                "expected_route": "general_reply",
+                "actual_faq_in_state": False,
+                "expected_faq_in_state": False,
+                "actual_faq_id": None,
+                "expected_faq_id": None,
+                "faq_id_ok": True,
+                "complexity": "simple",
+                "tags": ["general"],
+                "analysis_source": "llm",
+                "analysis_error": analysis_error,
+                "response_source": "local",
+                "response_error": response_error,
+                "latency_ms": latency_ms,
+                "model_call_count": model_call_count,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "estimated_cost_usd": estimated_cost_usd,
+            }
+
+        results = [
+            make_result(
+                "runtime_one",
+                latency_ms=10.0,
+                model_call_count=2,
+                input_tokens=100,
+                output_tokens=20,
+                estimated_cost_usd=0.001,
+            ),
+            make_result(
+                "runtime_two",
+                latency_ms=20.0,
+                model_call_count=0,
+                analysis_error="ValueError",
+            ),
+            make_result(
+                "runtime_three",
+                latency_ms=40.0,
+                model_call_count=1,
+                response_error="APITimeoutError",
+                input_tokens=50,
+                output_tokens=10,
+                estimated_cost_usd=0.002,
+            ),
+        ]
+
+        summary = build_summary(results)
+
+        # 平均延迟为 (10 + 20 + 40) / 3。
+        self.assertAlmostEqual(
+            summary["latency_ms_average"],
+            70 / 3,
+        )
+
+        # 三个样本中覆盖 95% 的最近秩样本是 40ms。
+        self.assertEqual(summary["latency_ms_p95"], 40.0)
+
+        # 模型调用总数为 2 + 0 + 1。
+        self.assertEqual(summary["model_call_total"], 3)
+        self.assertAlmostEqual(
+            summary["model_call_average"],
+            1.0,
+        )
+
+        # 只有两条结果提供了 Token 和成本数据。
+        self.assertEqual(summary["input_tokens_total"], 150)
+        self.assertEqual(summary["output_tokens_total"], 30)
+        self.assertAlmostEqual(
+            summary["estimated_cost_usd_total"],
+            0.003,
+        )
+        self.assertEqual(summary["token_observation_count"], 2)
+        self.assertEqual(summary["cost_observation_count"], 2)
+
+        # 分别统计超时、解析失败和所有错误类型。
+        self.assertEqual(summary["timeout_count"], 1)
+        self.assertEqual(summary["parse_failure_count"], 1)
+        self.assertEqual(
+            summary["failure_type_counts"],
+            {
+                "ValueError": 1,
+                "APITimeoutError": 1,
+            },
+        )
 
     def test_build_summary_counts_metrics_and_fallbacks(self) -> None:
         # 构造一条大模型分析和大模型回复都成功的结果。

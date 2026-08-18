@@ -1,13 +1,19 @@
 import json
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from src.model_client import create_openai_client
 from src.model_config import load_model_config
+from src.model_usage import attach_usage
 
 
 class ModelReply(TypedDict):
     # 经过解析和校验后，可以写入客服状态的最终回复。
     response: str
+
+    # 兼容支持 usage 的模型服务。
+    input_tokens: NotRequired[int]
+    output_tokens: NotRequired[int]
+    estimated_cost_usd: NotRequired[float]
 
 
 # 限制模型只能根据已经验证过的 FAQ 答案组织客服回复。
@@ -64,7 +70,8 @@ def request_model_reply(query: str, faq_answer: str) -> str:
     if content is None:
         raise ValueError("模型没有返回客服回复。")
 
-    return content
+    # 保留原始文本的同时附加 usage 元数据。
+    return attach_usage(content, response)
 
 
 def parse_model_reply(content: str) -> ModelReply:
@@ -109,4 +116,22 @@ def generate_reply_with_model(query: str, faq_answer: str) -> ModelReply:
     content = request_model_reply(query, faq_answer)
 
     # 再在本地解析和校验，最后返回可信的数据结构。
-    return parse_model_reply(content)
+    reply = parse_model_reply(content)
+
+    # 测试中的普通字符串没有 usage；
+    # 真实兼容服务返回的 UsageText 可能包含这些字段。
+    usage = getattr(content, "usage", {})
+    if usage:
+        reply.update(
+            {
+                key: usage[key]
+                for key in (
+                    "input_tokens",
+                    "output_tokens",
+                    "estimated_cost_usd",
+                )
+                if key in usage
+            }
+        )
+
+    return reply

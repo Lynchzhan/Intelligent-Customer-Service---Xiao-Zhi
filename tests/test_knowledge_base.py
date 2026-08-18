@@ -1,9 +1,47 @@
 import unittest
 
-from src.knowledge_base import find_faq_answer, find_faq_entry
+from src.knowledge_base import (
+    find_faq_answer,
+    find_faq_entry,
+    search_faq_entries,
+)
 
 
 class KnowledgeBaseTests(unittest.TestCase):
+    def test_search_faq_entries_returns_scored_top_candidate(
+        self,
+    ) -> None:
+        # 查询同时命中退款主题和“多久”意图。
+        matches = search_faq_entries(
+            "退款一般多久到账？",
+            top_k=1,
+        )
+
+        # 只请求一个候选时，返回列表长度应为 1。
+        self.assertEqual(len(matches), 1)
+
+        # 候选中保留完整 FAQ 条目，第一名应为退款时效知识。
+        self.assertEqual(
+            matches[0]["entry"]["faq_id"],
+            "refund_timing",
+        )
+
+        # 当前分数由确定性关键词规则计算，必须大于严格门槛的 0.5，
+        # 也不应超过满分 1.0。
+        self.assertGreater(matches[0]["score"], 0.5)
+        self.assertLessEqual(matches[0]["score"], 1.0)
+
+    def test_search_faq_entries_returns_empty_for_negative_control(
+        self,
+    ) -> None:
+        # 用户已经确认退款到账，不是在询问到账时效。
+        matches = search_faq_entries(
+            "退款已经到账，谢谢客服！",
+        )
+
+        # 严格主题和意图规则不满足时，不应伪造候选上下文。
+        self.assertEqual(matches, [])
+
     def test_refund_timing_entry_returns_stable_id(self) -> None:
         # 读取完整 FAQ 条目，而不只是兼容旧接口的答案字符串。
         entry = find_faq_entry("退款一般多久到账？")

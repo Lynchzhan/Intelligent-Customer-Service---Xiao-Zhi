@@ -27,6 +27,11 @@ def main() -> None:
     report_dir = save_evaluation_report(
         results,
         output_root=Path("reports/baselines"),
+        metadata={
+            "runner": "rule_baseline",
+            "mode": "offline",
+            "model_name": "rule_based",
+        },
     )
 
     # 在终端展示最重要的基线结果。
